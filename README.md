@@ -94,7 +94,6 @@ Export Instagram comments to CSV for use with the [Giveaway Picker](https://give
 - ✅ No data collection
 - ✅ All processing is local
 - ✅ No external servers
-- See [PRIVACY_POLICY.md](./PRIVACY_POLICY.md)
 
 ## 🔗 Related
 
