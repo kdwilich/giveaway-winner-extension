@@ -258,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   function convertToCSV(comments) {
     // CSV header
-    const header = ['username', 'comment_text', 'timestamp', 'is_reply'];
+    const header = ['comment_id', 'username', 'user_id', 'comment_text', 'timestamp', 'profile_pic_url', 'is_reply'];
     
     // Escape CSV fields
     const escapeCSV = (field) => {
@@ -272,9 +272,12 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Build CSV rows
     const rows = comments.map(comment => [
+      escapeCSV(comment.comment_id),
       escapeCSV(comment.username),
+      escapeCSV(comment.user_id),
       escapeCSV(comment.comment_text),
       escapeCSV(comment.timestamp),
+      escapeCSV(comment.profile_pic_url),
       escapeCSV(comment.is_reply)
     ].join(','));
     

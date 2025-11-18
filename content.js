@@ -1,4 +1,3 @@
-
 // Global flag to track if scraping should be cancelled
 let shouldCancelScraping = false;
 
@@ -93,11 +92,14 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
   let postOwner = null;
   let requestCount = 0;
   let totalCommentCount = 0;
+  let stuckCounter = 0; // Track if we're stuck at same count
+  let lastCommentCount = 0;
   const MAX_REQUESTS = 100; // Safety limit
+  const MAX_STUCK_ITERATIONS = 2; // If count doesn't change for 2 requests, stop
 
   console.log(`Starting to fetch comments for post: ${shortcode}`);
   console.log(`Using ${delaySeconds} second delay between requests`);
-
+  
   while (hasNextPage && requestCount < MAX_REQUESTS && !shouldCancelScraping) {
     requestCount++;
     
@@ -118,7 +120,7 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
       const url = `https://www.instagram.com/graphql/query/?query_hash=bc3296d1ce80a24b1b6e40b1e72903f5&variables=${encodeURIComponent(JSON.stringify(variables))}`;
       
       console.log(`Fetching batch ${requestCount} (after: ${endCursor || 'start'})`);
-
+      
       const response = await fetch(url, {
         method: 'GET',
         headers: {
@@ -150,16 +152,25 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
       }
 
       console.log(`Received ${edges.length} comments. Has next page: ${pageInfo?.has_next_page}`);
-
+      
+      // If we got 0 edges and API says there's a next page, we're likely stuck
+      if (edges.length === 0 && pageInfo?.has_next_page) {
+        console.log('Warning: API says more pages exist but returned 0 comments. Stopping.');
+        break;
+      }
+      
       // Process comments
       for (const edge of edges) {
         const node = edge.node;
         
         // Add parent comment
         allComments.push({
+          comment_id: node.id || '',
           username: node.owner?.username || 'unknown',
+          user_id: node.owner?.id || '',
           comment_text: node.text || '',
           timestamp: node.created_at ? new Date(node.created_at * 1000).toISOString() : 'unknown',
+          profile_pic_url: node.owner?.profile_pic_url || '',
           is_reply: false
         });
 
@@ -168,13 +179,29 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
           for (const replyEdge of node.edge_threaded_comments.edges) {
             const reply = replyEdge.node;
             allComments.push({
+              comment_id: reply.id || '',
               username: reply.owner?.username || 'unknown',
+              user_id: reply.owner?.id || '',
               comment_text: reply.text || '',
               timestamp: reply.created_at ? new Date(reply.created_at * 1000).toISOString() : 'unknown',
+              profile_pic_url: reply.owner?.profile_pic_url || '',
               is_reply: true
             });
           }
         }
+      }
+
+      // Check if we're stuck (count hasn't changed)
+      if (allComments.length === lastCommentCount) {
+        stuckCounter++;
+        console.log(`Warning: Comment count hasn't changed (${allComments.length}). Stuck counter: ${stuckCounter}`);
+        if (stuckCounter >= MAX_STUCK_ITERATIONS) {
+          console.log('Stuck at same count for too long. Completing fetch with current comments.');
+          break;
+        }
+      } else {
+        stuckCounter = 0; // Reset if we made progress
+        lastCommentCount = allComments.length;
       }
 
       // Send progress update
@@ -182,8 +209,8 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
         try {
           const progress = {
             current: allComments.length,
-            total: totalCommentCount || allComments.length,
-            percent: totalCommentCount ? Math.round((allComments.length / totalCommentCount) * 100) : 0,
+            total: Math.max(totalCommentCount, allComments.length), // Use max to handle count mismatches
+            percent: totalCommentCount ? Math.min(100, Math.round((allComments.length / totalCommentCount) * 100)) : 0,
             comments: allComments, // Include current comments for cancellation
             postOwner: postOwner
           };
@@ -199,6 +226,12 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
       // Check if there are more pages
       hasNextPage = pageInfo?.has_next_page || false;
       endCursor = pageInfo?.end_cursor || '';
+      
+      // If we've fetched at least as many as the total count (with small margin), stop even if hasNextPage is true
+      if (totalCommentCount > 0 && allComments.length >= totalCommentCount - 5) {
+        console.log(`Fetched ${allComments.length} comments, close enough to reported total of ${totalCommentCount}. Stopping.`);
+        break;
+      }
 
       // Rate limiting: wait with countdown
       if (hasNextPage && !shouldCancelScraping) {
@@ -216,8 +249,8 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
             try {
               sendProgress({
                 current: allComments.length,
-                total: totalCommentCount || allComments.length,
-                percent: totalCommentCount ? Math.round((allComments.length / totalCommentCount) * 100) : 0,
+                total: Math.max(totalCommentCount, allComments.length),
+                percent: totalCommentCount ? Math.min(100, Math.round((allComments.length / totalCommentCount) * 100)) : 0,
                 countdown: i,
                 comments: allComments,
                 postOwner: postOwner
@@ -254,7 +287,7 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
   }
 
   console.log(`Finished fetching. Total comments: ${allComments.length}`);
-
+  
   return {
     comments: allComments,
     postOwner: postOwner
