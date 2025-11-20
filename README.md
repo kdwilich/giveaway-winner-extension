@@ -1,4 +1,4 @@
-# 🎣 Instagram Comment Scraper Chrome Extension
+# Instagram Comment Scraper Chrome Extension
 
 Export Instagram comments to CSV for use with the [Giveaway Picker](https://giveaway-winner.vercel.app/).
 

@@ -33,8 +33,8 @@
       background: rgba(255, 255, 255, 0.7);
       backdrop-filter: blur(12px);
       border-radius: 12px;
-      padding: 16px;
-      margin: 10px;
+      padding: 12px;
+      margin: 8px;
       border: 1px solid rgba(0, 0, 0, 0.1);
     }
 
@@ -62,7 +62,7 @@
     .about {
       background: rgba(139, 92, 246, 0.05);
       border: 1px solid rgba(139, 92, 246, 0.2);
-      padding: 10px 12px;
+      padding: 8px 10px;
       border-radius: 8px;
       font-size: 11px;
       margin-bottom: 14px;
@@ -208,7 +208,7 @@
     
     .options {
       background: rgba(255, 255, 255, 0.5);
-      padding: 14px;
+      padding: 10px;
       border-radius: 8px;
       border: 1px solid rgba(0, 0, 0, 0.1);
     }
@@ -229,6 +229,11 @@
       user-select: none;
     }
 
+    .options label:has(input:disabled) {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     @media (prefers-color-scheme: dark) {
       .options label {
         color: #fafafa;
@@ -247,6 +252,11 @@
       accent-color: #a88bfb;
     }
 
+    .options input[type="checkbox"]:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
     @media (prefers-color-scheme: dark) {
       .options input[type="checkbox"] {
         accent-color: #a88bfb;
@@ -260,6 +270,19 @@
       background: linear-gradient(to right, #a88bfb 0%, #a88bfb var(--range-progress, 50%), #e0e0e0 var(--range-progress, 50%), #e0e0e0 100%);
       border-radius: 5px;
       outline: none;
+    }
+
+    input[type="range"]:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    input[type="range"]:disabled::-webkit-slider-thumb {
+      cursor: not-allowed;
+    }
+
+    input[type="range"]:disabled::-moz-range-thumb {
+      cursor: not-allowed;
     }
 
     input[type="range"]::-webkit-slider-thumb {
@@ -461,7 +484,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>🎣 Instagram Comment Scraper</h1>
+    <h1>Instagram Comment Scraper <img src="icon48.png" alt="Icon" style="width: 24px; height: 24px; vertical-align: middle; margin-right: 8px;"></h1>
 
     <div class="about">
       Export Instagram comments to use with <a href="https://giveaway-winner.vercel.app/" target="_blank">Giveaway Picker</a> for fair winner selection.

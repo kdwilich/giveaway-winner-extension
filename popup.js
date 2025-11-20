@@ -134,9 +134,10 @@ document.addEventListener('DOMContentLoaded', () => {
     scrapeBtn.textContent = 'Fetching... 0%';
     showStatus('Initializing... Please keep this window open.', 'info');
     
-    // Show cancel button and disable slider
+    // Show cancel button and disable slider and checkbox
     cancelBtn.style.display = 'block';
     delaySlider.disabled = true;
+    document.getElementById('excludePoster').disabled = true;
     
     // Get settings
     const excludePoster = document.getElementById('excludePoster').checked;
@@ -277,6 +278,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelBtn.disabled = false;
     cancelBtn.textContent = 'Cancel Fetch';
     delaySlider.disabled = false;
+    document.getElementById('excludePoster').disabled = false;
     currentComments = [];
     currentPostOwner = null;
   }
