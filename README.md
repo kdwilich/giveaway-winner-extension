@@ -1,6 +1,6 @@
 # Instagram Comment Scraper Chrome Extension
 
-Export Instagram comments to CSV for use with the [Giveaway Picker](https://giveaway-winner.vercel.app/).
+Export Instagram comments to CSV for use with the [Giveaway Picker](https://luckypick.win/).
 
 > **📢 Coming Soon to Chrome Web Store!**  
 > We're currently working on publishing this extension to the Chrome Web Store. In the meantime, you can install it locally by following the instructions below.
@@ -97,5 +97,5 @@ Export Instagram comments to CSV for use with the [Giveaway Picker](https://give
 
 ## 🔗 Related
 
-- [Giveaway Picker](https://giveaway-winner.vercel.app/)
+- [Giveaway Picker](https://luckypick.win/)
 - [GitHub Repo](https://github.com/kdwilich/giveaway-winner)
