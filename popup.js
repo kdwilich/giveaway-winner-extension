@@ -7,9 +7,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const progressBarFill = document.getElementById('progressBarFill');
   const delaySlider = document.getElementById('delaySlider');
   const delayValue = document.getElementById('delayValue');
+  const instructionsToggle = document.getElementById('instructionsToggle');
+  const instructionsContent = document.getElementById('instructionsContent');
   let isProcessing = false;
   let currentComments = []; // Store fetched comments
   let currentPostOwner = null;
+  
+  // Toggle instructions section
+  instructionsToggle.addEventListener('click', () => {
+    instructionsToggle.classList.toggle('collapsed');
+    instructionsContent.classList.toggle('collapsed');
+  });
+  
+  // Update slider progress fill
+  const updateSliderProgress = () => {
+    const value = ((delaySlider.value - delaySlider.min) / (delaySlider.max - delaySlider.min)) * 100;
+    delaySlider.style.setProperty('--range-progress', `${value}%`);
+  };
+  
+  // Initialize slider progress
+  updateSliderProgress();
   
   // Check if there's a completed fetch waiting
   chrome.storage.local.get(['completedFetch'], (result) => {
@@ -35,6 +52,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Update delay display when slider changes
   delaySlider.addEventListener('input', (e) => {
     delayValue.textContent = `${e.target.value}s`;
+    updateSliderProgress();
   });
   
   // Load saved delay setting
@@ -43,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (result.delaySeconds) {
         delaySlider.value = result.delaySeconds;
         delayValue.textContent = `${result.delaySeconds}s`;
+        updateSliderProgress();
       }
     });
     
@@ -102,6 +121,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   
   scrapeBtn.addEventListener('click', async () => {
+    // Collapse instructions section when fetch starts
+    if (!instructionsContent.classList.contains('collapsed')) {
+      instructionsToggle.classList.add('collapsed');
+      instructionsContent.classList.add('collapsed');
+    }
+    
     scrapeBtn.disabled = true;
     isProcessing = true;
     currentComments = [];
