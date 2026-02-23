@@ -8,8 +8,22 @@ chrome.action.onClicked.addListener(async (tab) => {
 // receive. Without this, chrome.runtime.sendMessage from content.js produces
 // "Receiving end does not exist" errors when the sidepanel isn't loaded.
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  // The sidepanel listener handles these when it's open.
-  // This just prevents errors when it's not.
+  if (request.action === 'downloadCSV') {
+    const dataUrl = 'data:text/csv;charset=utf-8,' + encodeURIComponent(request.csvContent);
+    chrome.downloads.download({
+      url: dataUrl,
+      filename: request.filename,
+      saveAs: true
+    }, (downloadId) => {
+      if (chrome.runtime.lastError) {
+        console.error('Background download error:', chrome.runtime.lastError);
+        sendResponse({ error: chrome.runtime.lastError.message });
+      } else {
+        sendResponse({ downloadId });
+      }
+    });
+    return true; // async sendResponse
+  }
   return false;
 });
 

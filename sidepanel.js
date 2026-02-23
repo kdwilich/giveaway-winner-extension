@@ -1,11 +1,27 @@
+// Executed inside the Instagram tab via chrome.scripting.executeScript.
+// Must be fully self-contained — no closures allowed.
+async function fetchCommentBatch(shortcode, endCursor) {
+  const variables = { shortcode, first: 50, after: endCursor };
+  const url = `https://www.instagram.com/graphql/query/?query_hash=33ba35852cb50da46f5b5e889df7d159&variables=${encodeURIComponent(JSON.stringify(variables))}`;
+  const resp = await fetch(url, { method: 'GET', credentials: 'include' });
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  return resp.json();
+}
+
 // Side panel script - handles UI interaction
 document.addEventListener('DOMContentLoaded', () => {
   const scrapeBtn = document.getElementById('scrapeBtn');
   const cancelBtn = document.getElementById('cancelBtn');
   const redownloadBtn = document.getElementById('redownloadBtn');
   const statusDiv = document.getElementById('status');
-  const progressBar = document.getElementById('progressBar');
-  const progressBarFill = document.getElementById('progressBarFill');
+  const progressPane = document.getElementById('progressPane');
+  const progFill = document.getElementById('progFill');
+  const progPct = document.getElementById('progPct');
+  const statCount = document.getElementById('statCount');
+  const statOf = document.getElementById('statOf');
+  const statTime = document.getElementById('statTime');
+  const progNext = document.getElementById('progNext');
+  const progNextNum = document.getElementById('progNextNum');
   const delaySlider = document.getElementById('delaySlider');
   const delayValue = document.getElementById('delayValue');
   const instructionsToggle = document.getElementById('instructionsToggle');
@@ -19,12 +35,203 @@ document.addEventListener('DOMContentLoaded', () => {
   let lastDownloadedComments = []; // Store last successful download for re-download
   let lastDownloadFilename = ''; // Store last filename
   let scrapeStartTime = null; // Track when scraping started
+  let shouldCancelScraping = false;
+
+  // ── Cross-tab state persistence ───────────────────────────────
+  // Saves the current UI state to chrome.storage.session so that when
+  // the user switches tabs and the sidepanel re-renders, it shows the
+  // same thing.
+  function saveState() {
+    const state = {
+      statusText: statusDiv.textContent,
+      statusClass: statusDiv.className,
+      isProcessing,
+      instructionsCollapsed: instructionsContent.classList.contains('collapsed'),
+      rateLimitCollapsed: document.getElementById('rateLimitContent').classList.contains('collapsed'),
+      downloadReady: redownloadBtn.style.display === 'block',
+      downloadLabel: redownloadBtn.textContent,
+      downloadComments: lastDownloadedComments,
+      downloadFilename: lastDownloadFilename,
+      historyCollapsed: historyTable.classList.contains('collapsed'),
+    };
+    chrome.storage.session.set({ panelState: state }).catch(() => {});
+  }
+
+  async function restoreState() {
+    try {
+      const { panelState } = await chrome.storage.session.get('panelState');
+      if (!panelState) return;
+
+      // Status message
+      if (panelState.statusText) {
+        statusDiv.textContent = panelState.statusText;
+        statusDiv.className = panelState.statusClass || 'status';
+      }
+
+      // Collapsible sections
+      if (panelState.instructionsCollapsed) {
+        instructionsToggle.classList.add('collapsed');
+        instructionsContent.classList.add('collapsed');
+      } else {
+        instructionsToggle.classList.remove('collapsed');
+        instructionsContent.classList.remove('collapsed');
+      }
+      if (panelState.rateLimitCollapsed) {
+        document.getElementById('rateLimitToggle').classList.add('collapsed');
+        document.getElementById('rateLimitContent').classList.add('collapsed');
+      } else {
+        document.getElementById('rateLimitToggle').classList.remove('collapsed');
+        document.getElementById('rateLimitContent').classList.remove('collapsed');
+      }
+
+      // Download button
+      if (panelState.downloadReady && panelState.downloadComments?.length > 0) {
+        lastDownloadedComments = panelState.downloadComments;
+        lastDownloadFilename = panelState.downloadFilename || `instagram-comments-${Date.now()}.csv`;
+        redownloadBtn.textContent = panelState.downloadLabel || 'Download CSV File';
+        redownloadBtn.style.display = 'block';
+      }
+
+      // History section
+      if (panelState.historyCollapsed === false) {
+        historyToggle.classList.remove('collapsed');
+        historyTable.classList.remove('collapsed');
+      } else {
+        historyToggle.classList.add('collapsed');
+        historyTable.classList.add('collapsed');
+      }
+    } catch (e) {
+      console.log('Could not restore panel state:', e);
+    }
+  }
+
+  // Restore on load
+  restoreState();
+
+  // Listen for storage changes (another tab saved state)
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'session' && changes.panelState && !isProcessing) {
+      restoreState();
+    }
+  });
   
   // Toggle instructions section
   instructionsToggle.addEventListener('click', () => {
     instructionsToggle.classList.toggle('collapsed');
     instructionsContent.classList.toggle('collapsed');
+    saveState();
   });
+
+  // Toggle rate-limit section
+  document.getElementById('rateLimitToggle').addEventListener('click', () => {
+    document.getElementById('rateLimitToggle').classList.toggle('collapsed');
+    document.getElementById('rateLimitContent').classList.toggle('collapsed');
+    saveState();
+  });
+
+  // ── Run history ─────────────────────────────────────────────
+  const historyToggle = document.getElementById('historyToggle');
+  const historyTable = document.getElementById('historyTable');
+  const historyBody = document.getElementById('historyBody');
+  let runHistory = []; // { id, filename, csv, date, commentCount, shortcode }
+
+  // Toggle history section
+  historyToggle.addEventListener('click', () => {
+    historyToggle.classList.toggle('collapsed');
+    historyTable.classList.toggle('collapsed');
+    saveState();
+  });
+
+  async function loadHistory() {
+    try {
+      const { runHistory: stored } = await chrome.storage.local.get('runHistory');
+      runHistory = stored || [];
+    } catch (e) {
+      runHistory = [];
+    }
+    renderHistory();
+  }
+
+  function persistHistory() {
+    chrome.storage.local.set({ runHistory }).catch(() => {});
+  }
+
+  function addHistoryEntry(filename, csvContent, commentCount, shortcode) {
+    const entry = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      filename,
+      csv: csvContent,
+      date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+      commentCount,
+      shortcode: shortcode || ''
+    };
+    runHistory.unshift(entry);
+    // Keep last 50 entries to avoid storage bloat
+    if (runHistory.length > 50) runHistory = runHistory.slice(0, 50);
+    persistHistory();
+    renderHistory();
+  }
+
+  function removeHistoryEntry(id) {
+    runHistory = runHistory.filter(e => e.id !== id);
+    persistHistory();
+    renderHistory();
+  }
+
+  function renderHistory() {
+    historyBody.innerHTML = '';
+    if (runHistory.length === 0) {
+      historyBody.innerHTML = '<tr><td colspan="5" class="history-empty">No runs yet</td></tr>';
+      return;
+    }
+
+    for (const entry of runHistory) {
+      const tr = document.createElement('tr');
+
+      // Comments cell
+      const tdComments = document.createElement('td');
+      tdComments.className = 'history-td-comments';
+      tdComments.textContent = entry.commentCount;
+      tdComments.title = `${entry.commentCount} comments`;
+
+      // Post cell
+      const tdPost = document.createElement('td');
+      tdPost.className = 'history-td-post';
+      tdPost.textContent = entry.shortcode || entry.filename;
+      tdPost.title = entry.shortcode || entry.filename;
+
+      // Date cell
+      const tdDate = document.createElement('td');
+      tdDate.className = 'history-td-date';
+      tdDate.textContent = entry.date;
+      tdDate.title = entry.date;
+
+      // Download button cell
+      const tdDl = document.createElement('td');
+      const dlBtn = document.createElement('button');
+      dlBtn.className = 'history-download';
+      dlBtn.innerHTML = '\u2B07';
+      dlBtn.title = 'Download CSV';
+      dlBtn.addEventListener('click', () => {
+        downloadCSV(entry.csv, entry.filename);
+      });
+      tdDl.appendChild(dlBtn);
+
+      // Delete button cell
+      const tdDel = document.createElement('td');
+      const delBtn = document.createElement('button');
+      delBtn.className = 'history-delete';
+      delBtn.title = 'Remove from history';
+      delBtn.addEventListener('click', () => removeHistoryEntry(entry.id));
+      tdDel.appendChild(delBtn);
+
+      tr.append(tdComments, tdPost, tdDate, tdDl, tdDel);
+      historyBody.appendChild(tr);
+    }
+  }
+
+  // Load history on startup
+  loadHistory();
   
   // Update slider progress fill
   const updateSliderProgress = () => {
@@ -93,12 +300,12 @@ document.addEventListener('DOMContentLoaded', () => {
   chrome.storage.local.get(['completedFetch'], (result) => {
     if (result.completedFetch) {
       const data = result.completedFetch;
-      showStatus(`✓ Fetch completed! ${data.comments.length} comments ready to download.`, 'success');
+      showStatus(`✓ Done! ${data.comments.length} comments collected. Ready to download.`, 'success');
       
       // Store for manual download
       lastDownloadedComments = data.comments;
-      lastDownloadFilename = `instagram_comments_${Date.now()}.csv`;
-      redownloadBtn.textContent = 'Download CSV';
+      lastDownloadFilename = `instagram-comments-${data.shortcode || Date.now()}.csv`;
+      redownloadBtn.textContent = 'Download CSV File';
       redownloadBtn.style.display = 'block';
       
       // Clear the stored data
@@ -134,100 +341,164 @@ document.addEventListener('DOMContentLoaded', () => {
   let timerInterval = null;
   let estimatedSecondsRemaining = 0;
   let displayCountdown = 0;
-  let statusMainLine = '';
+  let currentCollected = 0;
+  let currentTotal = 0;
+  let currentPercent = 0;
   let rollingLatencyMs = 500; // Initial estimate; refined by actual response times
 
-  // Rebuild the status display from stored state (called by both the interval and progress handler)
+  // Rebuild the progress pane from current state (driven by both the message handler and the interval)
   const rebuildStatus = () => {
-    let lines = statusMainLine;
-    if (displayCountdown > 0) {
-      lines += `\n\u2022 Next request in ${displayCountdown}s`;
-    }
+    progFill.style.width = `${currentPercent}%`;
+    progPct.textContent = `${currentPercent}%`;
+    statCount.textContent = currentCollected.toLocaleString();
+    statOf.textContent = currentTotal > 0 ? `of ${currentTotal.toLocaleString()}` : '';
+
     const secs = Math.round(estimatedSecondsRemaining);
-    if (secs > 1) {
+    if (secs <= 1) {
+      statTime.textContent = '—';
+    } else {
       const mins = Math.floor(secs / 60);
       const rem = secs % 60;
-      if (mins > 0) {
-        lines += rem > 0 ? `\n\u2022 ~${mins}m ${rem}s remaining` : `\n\u2022 ~${mins}m remaining`;
-      } else {
-        lines += `\n\u2022 ~${rem}s remaining`;
-      }
+      statTime.textContent = mins > 0
+        ? (rem > 0 ? `~${mins}m ${rem}s` : `~${mins}m`)
+        : `~${secs}s`;
     }
-    showStatus(lines, 'info');
+
+    // Update the number only; the label is static in HTML
+    progNext.style.display = '';
+    progNextNum.textContent = displayCountdown > 0 ? `${displayCountdown}s` : '…';
   };
 
-  // Listen for progress updates from content script
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'progress') {
-      const { current, total, percent, countdown, comments, postOwner, avgLatencyMs } = request.data;
-      
-      // Ensure UI is in processing state (handles tab switches)
-      if (!isProcessing) {
-        isProcessing = true;
-        scrapeBtn.style.display = 'none';
-        cancelBtn.style.display = 'block';
-        cancelBtn.disabled = false;
-        cancelBtn.textContent = 'Cancel Fetch';
-        delaySlider.disabled = true;
-        document.getElementById('excludePoster').disabled = true;
-        redownloadBtn.style.display = 'none';
-        progressBar.classList.add('visible');
-        // Track the tab that sent this progress
-        if (sender?.tab?.id) {
-          scrapingTabId = sender.tab.id;
+  // ── Scrape loop — runs in sidepanel, executes each fetch inside the Instagram tab ──
+  async function runScrape(tabId, shortcode, delaySeconds) {
+    const allComments = [];
+    let hasNextPage = true;
+    let endCursor = '';
+    let postOwner = null;
+    let requestCount = 0;
+    let totalCommentCount = 0;
+    let stuckCounter = 0;
+    let lastCommentCount = 0;
+    const MAX_REQUESTS = 1000;
+    const MAX_STUCK_ITERATIONS = 3;
+    let totalLatencyMs = 0;
+    let latencyCount = 0;
+
+    while (hasNextPage && requestCount < MAX_REQUESTS && !shouldCancelScraping) {
+      requestCount++;
+      if (shouldCancelScraping) break;
+
+      const fetchStart = Date.now();
+      let data;
+      try {
+        const [result] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: fetchCommentBatch,
+          args: [shortcode, endCursor]
+        });
+        if (result.error) throw new Error(result.error.message || 'Script execution error');
+        data = result.result;
+      } catch (err) {
+        console.error(`[SCRAPE] Batch ${requestCount} error:`, err);
+        break;
+      }
+
+      const latencyMs = Date.now() - fetchStart;
+      totalLatencyMs += latencyMs;
+      latencyCount++;
+
+      const media = data?.data?.shortcode_media;
+      const etpcData = media?.edge_media_to_parent_comment;
+      const etcData = media?.edge_media_to_comment;
+      const commentData = etpcData || etcData;
+      const edges = commentData?.edges || [];
+      const pageInfo = commentData?.page_info;
+
+      if (!postOwner && media?.owner?.username) postOwner = media.owner.username;
+
+      if (totalCommentCount === 0) {
+        totalCommentCount = Math.max(etcData?.count || 0, etpcData?.count || 0);
+      }
+
+      if (edges.length === 0 && pageInfo?.has_next_page) break;
+
+      // Process comments
+      for (const edge of edges) {
+        const node = edge.node;
+        allComments.push({
+          comment_id: node.id || '',
+          username: node.owner?.username || 'unknown',
+          user_id: node.owner?.id || '',
+          comment_text: node.text || '',
+          timestamp: node.created_at ? new Date(node.created_at * 1000).toISOString() : 'unknown',
+          profile_pic_url: node.owner?.profile_pic_url || '',
+          is_reply: false
+        });
+        if (node.edge_threaded_comments?.edges) {
+          for (const re of node.edge_threaded_comments.edges) {
+            const r = re.node;
+            allComments.push({
+              comment_id: r.id || '',
+              username: r.owner?.username || 'unknown',
+              user_id: r.owner?.id || '',
+              comment_text: r.text || '',
+              timestamp: r.created_at ? new Date(r.created_at * 1000).toISOString() : 'unknown',
+              profile_pic_url: r.owner?.profile_pic_url || '',
+              is_reply: true
+            });
+          }
         }
       }
-      
-      // Store current comments for potential cancellation
-      if (comments) {
-        currentComments = comments;
-        currentPostOwner = postOwner;
-      }
 
-      // Update rolling latency estimate (exponential moving average)
-      if (avgLatencyMs != null) {
-        rollingLatencyMs = rollingLatencyMs * 0.7 + avgLatencyMs * 0.3;
-      }
-      const delaySeconds = parseInt(delaySlider.value);
-      const commentsPerRequest = 50;
-      const remainingComments = Math.max(0, total - current);
-      const remainingRequests = Math.ceil(remainingComments / commentsPerRequest);
-      const latencySeconds = rollingLatencyMs / 1000;
-
-      // Update shared state used by the interval ticker
-      statusMainLine = `Fetched ${current} of ${total} comments (${percent}%)`;
-      if (countdown !== undefined && percent < 100) {
-        displayCountdown = countdown;
-        // Time = this countdown + latency for the upcoming fetch + remaining full cycles after that
-        estimatedSecondsRemaining = countdown + latencySeconds
-          + Math.max(0, remainingRequests - 1) * (delaySeconds + latencySeconds);
+      // Stuck detection
+      if (allComments.length === lastCommentCount) {
+        if (++stuckCounter >= MAX_STUCK_ITERATIONS) break;
       } else {
-        displayCountdown = 0;
-        estimatedSecondsRemaining = remainingRequests * (delaySeconds + latencySeconds);
+        stuckCounter = 0;
+        lastCommentCount = allComments.length;
       }
 
-      // Start the interval once; it ticks every second independently of message arrival
-      if (!timerInterval && isProcessing) {
-        timerInterval = setInterval(() => {
-          if (!isProcessing) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-            return;
-          }
-          estimatedSecondsRemaining = Math.max(0, estimatedSecondsRemaining - 1);
-          if (displayCountdown > 0) displayCountdown = Math.max(0, displayCountdown - 1);
-          rebuildStatus();
-        }, 1000);
-      }
+      // Update pagination
+      hasNextPage = pageInfo?.has_next_page || false;
+      endCursor = pageInfo?.end_cursor || '';
 
+      // Update UI state
+      currentCollected = allComments.length;
+      currentTotal = Math.max(totalCommentCount, allComments.length);
+      currentPercent = totalCommentCount
+        ? Math.min(100, Math.round((allComments.length / totalCommentCount) * 100))
+        : 0;
+      currentComments = allComments;
+      currentPostOwner = postOwner;
+
+      // Recalculate time estimate
+      const remaining = Math.max(0, currentTotal - currentCollected);
+      if (remaining > 0) {
+        rollingLatencyMs = rollingLatencyMs * 0.7 + (totalLatencyMs / latencyCount) * 0.3;
+        estimatedSecondsRemaining = Math.ceil(remaining / 50) * (delaySeconds + rollingLatencyMs / 1000);
+      } else {
+        estimatedSecondsRemaining = 0;
+      }
       rebuildStatus();
 
-      // Update progress bar
-      progressBar.classList.add('visible');
-      progressBarFill.style.width = `${percent}%`;
+      // Early exit when close to total
+      if (totalCommentCount > 0 && allComments.length >= totalCommentCount - 5) break;
+
+      // Rate-limit countdown (delay between batches)
+      if (hasNextPage && !shouldCancelScraping) {
+        displayCountdown = delaySeconds;
+        rebuildStatus();
+        for (let i = 0; i < delaySeconds * 10; i++) {
+          if (shouldCancelScraping) break;
+          await new Promise(r => setTimeout(r, 100));
+        }
+        displayCountdown = 0;
+      }
     }
-  });
-  
+
+    return { comments: allComments, postOwner };
+  }
+
   scrapeBtn.addEventListener('click', async () => {
     // Collapse instructions section when fetch starts
     if (!instructionsContent.classList.contains('collapsed')) {
@@ -241,7 +512,7 @@ document.addEventListener('DOMContentLoaded', () => {
     currentComments = [];
     currentPostOwner = null;
     scrapeStartTime = Date.now();
-    showStatus('Initializing...', 'info');
+    showStatus('Starting up…', 'info');
     
     // Validate URL input
     const instagramUrl = instagramUrlInput.value.trim();
@@ -306,7 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       };
 
-      showStatus('Starting to fetch comments via Instagram API...', 'info');
+      showStatus('Connecting to Instagram…', 'info');
 
       // Strategy: try multiple tabs until one works
       let tab = null;
@@ -315,8 +586,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const matchingTabs = await chrome.tabs.query({ url: '*://www.instagram.com/p/*' });
       const targetShortcode = instagramUrl.match(/\/p\/([\w-]+)/)?.[1];
 
+      console.log('[TAB SEARCH] Looking for shortcode:', targetShortcode);
+      console.log('[TAB SEARCH] Matching /p/* tabs:', matchingTabs.map(t => ({ id: t.id, url: t.url, status: t.status })));
+
+      // Also check reel tabs — Instagram sometimes serves posts as reels
+      const reelTabs = await chrome.tabs.query({ url: '*://www.instagram.com/reel/*' });
+      const allCandidates = [...matchingTabs, ...reelTabs];
+      console.log('[TAB SEARCH] Reel tabs:', reelTabs.map(t => ({ id: t.id, url: t.url, status: t.status })));
+
       if (targetShortcode) {
-        const exactMatch = matchingTabs.find(t => t.url.includes(`/p/${targetShortcode}`));
+        const exactMatch = allCandidates.find(t => t.url.includes(`/p/${targetShortcode}`) || t.url.includes(`/reel/${targetShortcode}`));
+        console.log('[TAB SEARCH] Exact shortcode match:', exactMatch ? { id: exactMatch.id, url: exactMatch.url } : 'none');
         if (exactMatch && await tryTab(exactMatch)) {
           tab = exactMatch;
         }
@@ -325,16 +605,20 @@ document.addEventListener('DOMContentLoaded', () => {
       // 2. Fallback: try the active tab (user might have the post open there)
       if (!tab) {
         const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        console.log('[TAB SEARCH] Active tab:', activeTab ? { id: activeTab.id, url: activeTab.url } : 'none');
         if (activeTab?.url?.includes('instagram.com') && await tryTab(activeTab)) {
           tab = activeTab;
+          console.log('[TAB SEARCH] Using active tab');
         }
       }
 
       // 3. Fallback: try ANY open Instagram post tab
       if (!tab) {
-        for (const candidate of matchingTabs) {
+        console.log('[TAB SEARCH] Trying any Instagram tab as last resort...');
+        for (const candidate of allCandidates) {
           if (await tryTab(candidate)) {
             tab = candidate;
+            console.log('[TAB SEARCH] Found working candidate:', { id: candidate.id, url: candidate.url });
             break;
           }
         }
@@ -346,118 +630,89 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      // Content script is confirmed alive — send the scrape request
+      // Run the scrape loop directly from sidepanel
       scrapingTabId = tab.id;
-      chrome.tabs.sendMessage(tab.id, {
-        action: 'scrapeComments',
-        excludePoster,
-        delaySeconds,
-        instagramUrl
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          console.error('Chrome runtime error:', chrome.runtime.lastError);
-          showStatus('⚠️ Lost connection to Instagram tab. Please refresh the Instagram page and try again.', 'error');
-          resetButton();
-          return;
-        }
-        
-        if (response && response.success) {
-          console.log('Success! Processing', response.comments.length, 'comments');
-          let comments = response.comments;
-          
-          // Filter post owner if checkbox is checked
-          if (excludePoster && response.postOwner) {
-            comments = comments.filter(c => c.username !== response.postOwner);
-          }
-          
-          if (comments.length === 0) {
-            showStatus('No comments found. Try refreshing the Instagram page.', 'error');
-            resetButton();
-            return;
-          }
-          
-          // Convert to CSV and download
-          const csv = convertToCSV(comments);
-          const filename = `instagram_comments_${Date.now()}.csv`;
-          
-          // Store for re-download
+      shouldCancelScraping = false;
+      progressPane.classList.add('active');
+      statusDiv.className = 'status'; // clear "Connecting…"
+
+      // Start smooth 1s ticker for time estimate & countdown display
+      if (!timerInterval) {
+        timerInterval = setInterval(() => {
+          if (!isProcessing) { clearInterval(timerInterval); timerInterval = null; return; }
+          estimatedSecondsRemaining = Math.max(0, estimatedSecondsRemaining - 1);
+          if (displayCountdown > 0) displayCountdown = Math.max(0, displayCountdown - 1);
+          rebuildStatus();
+        }, 1000);
+      }
+
+      const result = await runScrape(tab.id, targetShortcode, delaySeconds);
+
+      // Handle result
+      let comments = result.comments;
+      if (excludePoster && result.postOwner) {
+        comments = comments.filter(c => c.username !== result.postOwner);
+      }
+
+      if (shouldCancelScraping) {
+        if (comments.length > 0) {
           lastDownloadedComments = comments;
-          lastDownloadFilename = filename;
-          
-          // Calculate and display duration
-          let durationText = '';
-          if (scrapeStartTime) {
-            const elapsed = Math.round((Date.now() - scrapeStartTime) / 1000);
-            const mins = Math.floor(elapsed / 60);
-            const secs = elapsed % 60;
-            durationText = mins > 0 
-              ? ` (took ${mins}m ${secs}s)` 
-              : ` (took ${secs}s)`;
-          }
-          showStatus(`✓ Successfully scraped ${comments.length} comments!${durationText}`, 'success');
-          
-          // Show re-download button
-          redownloadBtn.textContent = 'Download CSV';
+          lastDownloadFilename = `instagram-comments-${targetShortcode || Date.now()}.csv`;
+          // Record partial run in history
+          const csv = convertToCSV(comments);
+          addHistoryEntry(lastDownloadFilename, csv, comments.length, targetShortcode);
+          showStatus(`⚠️ Stopped. ${comments.length} comments collected — ready to download.`, 'success');
+          redownloadBtn.textContent = 'Download CSV File';
           redownloadBtn.style.display = 'block';
-          
-          // Keep success message visible longer
-          setTimeout(() => {
-            resetButton();
-          }, 3000);
         } else {
-          showStatus(`Error: ${response?.error || 'Unknown error'}`, 'error');
-          resetButton();
+          showStatus('Stopped. No comments collected yet.', 'error');
         }
-        });
+        resetButton();
+        saveState();
+        return;
+      }
+
+      if (comments.length === 0) {
+        showStatus('No comments found on this post. Try refreshing the Instagram page.', 'error');
+        resetButton();
+        saveState();
+        return;
+      }
+
+      lastDownloadedComments = comments;
+      lastDownloadFilename = `instagram-comments-${targetShortcode || Date.now()}.csv`;
+
+      // Record completed run in history
+      const csv = convertToCSV(comments);
+      addHistoryEntry(lastDownloadFilename, csv, comments.length, targetShortcode);
+
+      let durationText = '';
+      if (scrapeStartTime) {
+        const elapsed = Math.round((Date.now() - scrapeStartTime) / 1000);
+        const mins = Math.floor(elapsed / 60);
+        const secs = elapsed % 60;
+        durationText = mins > 0 ? ` (took ${mins}m ${secs}s)` : ` (took ${secs}s)`;
+      }
+      showStatus(`✓ Done! ${comments.length} comments collected${durationText}.`, 'success');
+      redownloadBtn.textContent = 'Download CSV File';
+      redownloadBtn.style.display = 'block';
+      resetButton();
+      // Persist completed state so other tabs see it
+      saveState();
+
     } catch (error) {
       showStatus(`Error: ${error.message}`, 'error');
       resetButton();
+      saveState();
     }
   });
   
-  cancelBtn.addEventListener('click', async () => {
+  cancelBtn.addEventListener('click', () => {
     if (!isProcessing) return;
-    
+    shouldCancelScraping = true;
     cancelBtn.disabled = true;
     cancelBtn.textContent = 'Cancelling...';
-    
-    // Send cancel to the tab that's actually running the scrape
-    const tabId = scrapingTabId;
-    if (tabId) {
-      chrome.tabs.sendMessage(tabId, { action: 'cancelScrape' });
-    } else {
-      // Fallback: try active tab
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      chrome.tabs.sendMessage(tab.id, { action: 'cancelScrape' });
-    }
-    
-    // Wait a moment for cancellation to process
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    if (currentComments.length > 0) {
-      // Store partial results but don't download yet
-      const excludePoster = document.getElementById('excludePoster').checked;
-      let comments = currentComments;
-      
-      // Filter post owner if checkbox is checked
-      if (excludePoster && currentPostOwner) {
-        comments = comments.filter(c => c.username !== currentPostOwner);
-      }
-      
-      // Store for download on button press
-      lastDownloadedComments = comments;
-      lastDownloadFilename = `instagram_comments_partial_${Date.now()}.csv`;
-      
-      showStatus(`⚠️ Cancelled. ${comments.length} partial comments ready to download.`, 'success');
-      
-      // Show download button
-      redownloadBtn.textContent = 'Download CSV';
-      redownloadBtn.style.display = 'block';
-    } else {
-      showStatus('Cancelled. No comments fetched yet.', 'error');
-    }
-    
-    resetButton();
+    // runScrape will see the flag, exit, and the click handler will show partial results.
   });
   
   // Re-download button handler
@@ -465,35 +720,42 @@ document.addEventListener('DOMContentLoaded', () => {
     if (lastDownloadedComments.length > 0) {
       const csv = convertToCSV(lastDownloadedComments);
       downloadCSV(csv, lastDownloadFilename);
-      showStatus(`✓ Re-downloaded ${lastDownloadedComments.length} comments!`, 'success');
+      showStatus(`✓ Downloaded ${lastDownloadedComments.length} comments.`, 'success');
+      saveState();
     }
   });
   
   function showStatus(message, type) {
+    if (type === 'success' || type === 'error') {
+      progressPane.classList.remove('active');
+      progNext.style.display = 'none';
+    }
     statusDiv.textContent = message;
     statusDiv.className = `status visible ${type}`;
   }
   
   function resetButton() {
+    shouldCancelScraping = false;
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     estimatedSecondsRemaining = 0;
     displayCountdown = 0;
-    statusMainLine = '';
+    currentCollected = 0;
+    currentTotal = 0;
+    currentPercent = 0;
+    progNext.style.display = 'none';
+    progNextNum.textContent = '…';
     scrapeBtn.style.display = '';
     scrapeBtn.disabled = false;
-    scrapeBtn.textContent = 'Fetch Comments';
+    scrapeBtn.textContent = 'Collect Comments';
     isProcessing = false;
     scrapingTabId = null;
-    progressBar.classList.remove('visible');
-    progressBarFill.style.width = '0%';
     cancelBtn.style.display = 'none';
     cancelBtn.disabled = false;
-    cancelBtn.textContent = 'Cancel Fetch';
+    cancelBtn.textContent = 'Cancel';
     delaySlider.disabled = false;
     document.getElementById('excludePoster').disabled = false;
     instagramUrlInput.disabled = false;
-    currentComments = [];
-    currentPostOwner = null;
+    // Don't clear currentComments/currentPostOwner — they feed the download button
   }
   
   function convertToCSV(comments) {
@@ -532,8 +794,8 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.downloads.download({
       url: url,
       filename: filename,
-      saveAs: true
-    }, () => {
+      saveAs: false
+    }, (downloadId) => {
       if (chrome.runtime.lastError) {
         console.error('Download error:', chrome.runtime.lastError);
       }

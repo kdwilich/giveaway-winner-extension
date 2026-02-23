@@ -464,35 +464,137 @@
       }
     }
 
-    .progress-bar {
-      width: 100%;
-      height: 6px;
-      background: rgba(0, 0, 0, 0.1);
-      border-radius: 3px;
-      overflow: hidden;
-      margin-top: 8px;
+    /* ── Progress pane ─────────────────────────────────────── */
+    .progress-pane {
       display: none;
+      background: rgba(139, 92, 246, 0.07);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-top: 12px;
+      animation: slideIn 0.3s ease;
     }
 
-    .progress-bar.visible {
-      display: block;
+    .progress-pane.active { display: block; }
+
+    .prog-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #8b5cf6;
+      margin-bottom: 12px;
     }
 
-    .progress-bar-fill {
-      height: 100%;
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
       background: #8b5cf6;
-      transition: width 0.3s ease;
-      border-radius: 3px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      animation: pulseDot 1.6s ease-in-out infinite;
+    }
+
+    @keyframes pulseDot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.35; transform: scale(0.75); }
+    }
+
+    .prog-bar-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .prog-track {
+      flex: 1;
+      height: 10px;
+      background: rgba(139, 92, 246, 0.15);
+      border-radius: 5px;
+      overflow: hidden;
+    }
+
+    .prog-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+      border-radius: 5px;
+      transition: width 0.5s ease;
+      width: 0%;
+    }
+
+    .prog-pct {
+      font-size: 12px;
+      font-weight: 700;
+      color: #8b5cf6;
+      min-width: 34px;
+      text-align: right;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .stat-card {
+      background: rgba(139, 92, 246, 0.08);
+      border: 1px solid rgba(139, 92, 246, 0.25);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+
+    .stat-val {
+      font-size: 20px;
+      font-weight: 700;
+      color: #8b5cf6;
+      line-height: 1.1;
+      letter-spacing: -0.5px;
+    }
+
+    .stat-lbl {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #666;
+      margin-top: 3px;
+    }
+
+    .stat-sub {
+      font-size: 11px;
+      color: #888;
+      margin-top: 2px;
+    }
+
+    .prog-next {
+      margin-top: 10px;
+      font-size: 12px;
+      color: #8b5cf6;
+      font-weight: 500;
+      text-align: center;
+      min-height: 16px;
+      opacity: 0.85;
     }
 
     @media (prefers-color-scheme: dark) {
-      .progress-bar {
-        background: rgba(255, 255, 255, 0.1);
+      .progress-pane {
+        background: rgba(167, 139, 250, 0.08);
+        border-color: rgba(167, 139, 250, 0.25);
       }
-
-      .progress-bar-fill {
-        background: #a78bfa;
+      .prog-header { color: #a78bfa; }
+      .pulse-dot { background: #a78bfa; }
+      .prog-track { background: rgba(167, 139, 250, 0.2); }
+      .prog-fill { background: linear-gradient(90deg, #a78bfa, #c4b5fd); }
+      .prog-pct { color: #a78bfa; }
+      .stat-card {
+        background: rgba(167, 139, 250, 0.08);
+        border-color: rgba(167, 139, 250, 0.25);
       }
+      .stat-val { color: #a78bfa; }
+      .stat-lbl { color: #a0a0a0; }
+      .stat-sub { color: #888; }
+      .prog-next { color: #a78bfa; }
     }
     
     .warning-banner strong {
@@ -535,6 +637,12 @@
       box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15);
     }
 
+    .url-input:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      background: rgba(0, 0, 0, 0.04);
+    }
+
     .url-error {
       font-size: 11px;
       color: #ef4444;
@@ -570,10 +678,221 @@
         box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.2);
       }
 
+      .url-input:disabled {
+        opacity: 0.5;
+        background: rgba(255, 255, 255, 0.04);
+      }
+
       .url-error {
         color: #f87171;
       }
     }
+
+    /* ── History section ────────────────────────────────── */
+    .history-section {
+      margin-top: 16px;
+    }
+
+    .history-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .history-table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      transition: max-height 0.3s ease, opacity 0.3s ease;
+      max-height: 2000px;
+      opacity: 1;
+      font-size: 11px;
+    }
+
+    .history-table.collapsed {
+      max-height: 0;
+      opacity: 0;
+      display: none;
+    }
+
+    .history-table thead th {
+      padding: 4px 4px 3px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.12);
+      font-size: 9px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #888;
+      text-align: left;
+    }
+
+    .history-th-comments {
+      text-align: left !important;
+      width: 32px;
+    }
+
+    .history-th-post {
+    }
+
+    .history-th-date {
+      white-space: nowrap;
+    }
+
+    .history-th-actions {
+      width: 48px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .history-table thead th {
+        border-bottom-color: rgba(255, 255, 255, 0.12);
+        color: #777;
+      }
+    }
+
+    .history-table td {
+      padding: 6px 4px;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+      vertical-align: middle;
+      animation: slideIn 0.2s ease;
+    }
+
+    .history-table tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .history-table td {
+        border-bottom-color: rgba(255, 255, 255, 0.06);
+      }
+    }
+
+    .history-td-comments {
+      font-weight: 600;
+      text-align: left;
+      color: #1a1a1a;
+    }
+
+    .history-td-post {
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 500;
+      color: #1a1a1a;
+    }
+
+    .history-td-date {
+      white-space: nowrap;
+      color: #888;
+      font-size: 10px;
+    }
+
+    .history-td-actions {
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .history-td-comments,
+      .history-td-post {
+        color: #e5e5e5;
+      }
+      .history-td-date {
+        color: #777;
+      }
+    }
+
+    .history-delete {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #ef4444;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      font-size: 0;
+      line-height: 1;
+      min-width: 0;
+      box-shadow: none;
+      transform: none;
+      opacity: 0.7;
+      transition: opacity 0.15s;
+    }
+
+    .history-delete::after {
+      content: '';
+      display: block;
+      width: 7px;
+      height: 1.5px;
+      background: #fff;
+      border-radius: 1px;
+    }
+
+    .history-delete:hover {
+      opacity: 1;
+      background: #ef4444;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .history-delete:active {
+      transform: none;
+    }
+
+
+
+    .history-download {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px;
+      color: #8b5cf6;
+      opacity: 0.7;
+      transition: opacity 0.15s;
+      flex-shrink: 0;
+      font-size: 14px;
+      line-height: 1;
+      min-width: 0;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .history-download:hover {
+      opacity: 1;
+      background: none;
+      box-shadow: none;
+      transform: none;
+    }
+
+    .history-download:active {
+      transform: none;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .history-download {
+        color: #a78bfa;
+      }
+    }
+
+    .history-empty {
+      font-size: 11px;
+      color: #888;
+      text-align: center;
+      padding: 12px 0;
+      font-style: italic;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .history-empty {
+        color: #777;
+      }
+    }
+
+
   </style>
 </head>
 <body>
@@ -590,11 +909,11 @@
         <strong>How to use:</strong>
         <ol>
           <li>Make sure you're logged into Instagram</li>
-          <li>Navigate to any Instagram post (or paste the URL above)</li>
-          <li>Click <strong>Fetch Comments</strong></li>
+          <li>Navigate to any Instagram post (or paste the URL below)</li>
+          <li>Click <strong>Collect Comments</strong></li>
           <li>Navigate to <a href="https://luckypick.win/" target="_blank">Lucky Pick</a> to pick a winner</li>
         </ol>
-        <div class="tip">💡 Extension will automatically fetch ALL comments via Instagram API</div>
+        <div class="tip">💡 Extension will automatically collect ALL comments via Instagram’s API</div>
       </div>
     </div>
     
@@ -616,12 +935,15 @@
       </div>
     </div>
 
-    <div class="section">
-      <div class="section-title">Rate Limiting</div>
-      <div class="options">
-        <div style="display: block; margin-bottom: 10px; font-size: 14px; color: #1a1a1a; font-weight: 400;">
-          Delay between requests (seconds):
-        </div>
+    <div class="section" id="rateLimitSection">
+      <div class="section-title collapsible collapsed" id="rateLimitToggle">Rate Limiting</div>
+      <div class="instructions collapsed" id="rateLimitContent">
+        <strong>Why do we wait between requests?</strong>
+        <p style="margin: 6px 0 0 0;">Instagram limits how fast you can request data. Each request returns up to <strong>50 comments</strong> — that’s the maximum their API allows per call.</p>
+        <p style="margin: 6px 0 0 0;">To avoid being temporarily blocked, we pause between requests. A <strong>higher delay</strong> (~8-10s) looks like normal browsing. A lower delay is faster but risks Instagram rate-limiting your account, stopping the collection entirely.</p>
+      </div>
+      <div class="options" style="margin-top: 8px;">
+        <div style="display: block; margin-bottom: 10px; font-size: 14px; font-weight: 400;">Delay between requests (seconds):</div>
         <div style="display: flex; gap: 8px; align-items: center;">
           <input type="range" id="delaySlider" min="1" max="20" value="10" step="1" style="flex: 1; cursor: pointer;" />
           <span id="delayValue" style="font-weight: 600; min-width: 45px; color: #a88bfb;">10s</span>
@@ -632,16 +954,54 @@
       </div>
     </div>
     
-    <button id="scrapeBtn">Fetch Comments</button>
-    
-    <button id="cancelBtn" style="display: none; margin-top: 10px; background: #ef4444;">Cancel Fetch</button>
-    
-    <button id="redownloadBtn" style="display: none; margin-top: 10px; background: #22c55e;">Download CSV Again</button>
-    
+    <button id="scrapeBtn">Collect Comments</button>
+
+    <button id="cancelBtn" style="display: none; margin-top: 10px; background: #ef4444;">Cancel</button>
+
+    <button id="redownloadBtn" style="display: none; margin-top: 10px; background: #22c55e;">Download CSV File</button>
+
+    <div id="progressPane" class="progress-pane">
+      <div class="prog-header">
+        <span class="pulse-dot"></span>
+        Collecting comments…
+      </div>
+      <div class="prog-bar-row">
+        <div class="prog-track">
+          <div id="progFill" class="prog-fill"></div>
+        </div>
+        <span id="progPct" class="prog-pct">0%</span>
+      </div>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div id="statCount" class="stat-val">0</div>
+          <div class="stat-lbl">collected</div>
+          <div id="statOf" class="stat-sub">&nbsp;</div>
+        </div>
+        <div class="stat-card">
+          <div id="statTime" class="stat-val">—</div>
+          <div class="stat-lbl">time remaining</div>
+        </div>
+      </div>
+      <div id="progNext" class="prog-next" style="display:none">Next batch in <span id="progNextNum">…</span></div>
+    </div>
+
     <div id="status" class="status"></div>
-    
-    <div id="progressBar" class="progress-bar">
-      <div id="progressBarFill" class="progress-bar-fill" style="width: 0%"></div>
+
+    <div class="history-section">
+      <div class="history-header">
+        <div class="section-title collapsible collapsed" id="historyToggle">History</div>
+      </div>
+      <table class="history-table collapsed" id="historyTable">
+        <thead>
+          <tr>
+            <th class="history-th-comments">Comments</th>
+            <th class="history-th-post">Post</th>
+            <th class="history-th-date">Date</th>
+            <th class="history-th-actions" colspan="2"></th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
     </div>
   </div>
   
