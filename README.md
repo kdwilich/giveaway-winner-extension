@@ -1,4 +1,4 @@
-# Instagram Comment Scraper Chrome Extension
+# Instagram Comment Collector Chrome Extension
 
 Export Instagram comments to CSV for use with the [Giveaway Picker](https://luckypick.win/).
 
@@ -34,7 +34,7 @@ Export Instagram comments to CSV for use with the [Giveaway Picker](https://luck
    - Navigate to and select the repository folder (or the extracted folder)
 
 5. **Verify installation**
-   - The "Instagram Comment Scraper" icon should appear in your Chrome toolbar
+   - The "Instagram Comment Collector" icon should appear in your Chrome toolbar
    - If you don't see it, click the puzzle icon and pin it
 
 ## 🎯 How to Use
@@ -45,9 +45,9 @@ Export Instagram comments to CSV for use with the [Giveaway Picker](https://luck
 4. **Adjust settings** (optional):
    - ✅ Exclude post owner's comments
    - ⏱️ Set delay between requests (1-20 seconds, default: 10s)
-5. **Click "Fetch All Comments & Download CSV"**
-6. **Keep the popup window open** while fetching
-7. **CSV file downloads automatically** when complete
+5. **Click "Collect Comments"**
+6. **Keep the side panel open** while collecting — progress and time remaining are shown live
+7. **Click "Download CSV File"** when collection is complete
 
 ## ⚙️ Settings
 
