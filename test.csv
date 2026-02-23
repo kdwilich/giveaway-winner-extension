@@ -1,0 +1,95 @@
+comment_id,username,user_id,comment_text,timestamp,profile_pic_url,is_reply
+18234567890123456,sarah_johnson,1234567890,"Love this! 😍",2025-11-19T14:23:45.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123457,mike_tech,1234567891,"Amazing content as always!",2025-11-19T14:25:12.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123458,fitness_guru23,1234567892,"This is exactly what I needed 💪",2025-11-19T14:27:33.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123459,travel_lover,1234567893,"Can't wait to try this!",2025-11-19T14:30:05.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123460,foodie_adventures,1234567894,"Looks delicious! 🍕",2025-11-19T14:32:18.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123461,photography_daily,1234567895,"Great shot! What camera did you use?",2025-11-19T14:35:42.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123462,yoga_mindful,1234567896,"So inspiring! ✨",2025-11-19T14:38:15.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123463,art_creator,1234567897,"Beautiful work!",2025-11-19T14:41:23.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123464,music_vibes,1234567898,"This is fire 🔥🔥🔥",2025-11-19T14:43:56.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123465,fashion_style,1234567899,"Where did you get that outfit?",2025-11-19T14:46:11.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123466,coffee_addict,1234567900,"Need this in my life ☕",2025-11-19T14:48:34.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123467,pet_lover99,1234567901,"Your dog is so cute! 🐕",2025-11-19T14:51:02.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123468,tech_reviewer,1234567902,"Incredible quality!",2025-11-19T14:53:27.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123469,gaming_pro,1234567903,"This is epic!",2025-11-19T14:55:45.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123470,book_worm,1234567904,"Adding this to my list 📚",2025-11-19T14:58:13.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123471,nature_explorer,1234567905,"Stunning views! 🏔️",2025-11-19T15:00:38.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123472,fitness_coach,1234567906,"Perfect form!",2025-11-19T15:03:01.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123473,movie_buff,1234567907,"This gives me movie vibes 🎬",2025-11-19T15:05:29.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123474,plant_mama,1234567908,"Your plants are thriving! 🌿",2025-11-19T15:07:52.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123475,street_photography,1234567909,"Love the composition!",2025-11-19T15:10:14.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123476,baker_daily,1234567910,"Recipe please! 🍰",2025-11-19T15:12:39.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123477,wellness_journey,1234567911,"So relatable!",2025-11-19T15:15:03.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123478,adventure_seeker,1234567912,"Added to my bucket list!",2025-11-19T15:17:28.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123479,skincare_tips,1234567913,"What products do you use?",2025-11-19T15:19:54.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123480,home_decor,1234567914,"Love your aesthetic! 🏡",2025-11-19T15:22:17.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123481,workout_daily,1234567915,"Great motivation!",2025-11-19T15:24:42.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123482,beach_life,1234567916,"Wish I was there! 🏖️",2025-11-19T15:27:08.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123483,vintage_finds,1234567917,"This is a gem!",2025-11-19T15:29:31.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123484,minimal_living,1234567918,"Clean and simple. Love it.",2025-11-19T15:31:56.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123485,sneaker_head,1234567919,"Those kicks are 🔥",2025-11-19T15:34:21.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123486,morning_routines,1234567920,"Starting my day like this now!",2025-11-19T15:36:45.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123487,sunset_chaser,1234567921,"Golden hour perfection! 🌅",2025-11-19T15:39:09.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123488,vegan_eats,1234567922,"Plant-based power! 🌱",2025-11-19T15:41:34.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123489,city_explorer,1234567923,"Which city is this?",2025-11-19T15:43:58.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123490,diy_projects,1234567924,"I need to try this!",2025-11-19T15:46:23.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123491,meditation_space,1234567925,"So peaceful ☮️",2025-11-19T15:48:47.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123492,cycling_adventures,1234567926,"What's your route?",2025-11-19T15:51:12.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123493,digital_nomad,1234567927,"Living the dream!",2025-11-19T15:53:36.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123494,film_photography,1234567928,"Film never dies! 📷",2025-11-19T15:56:01.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123495,smoothie_bowl,1234567929,"That looks so refreshing!",2025-11-19T15:58:25.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123496,mountain_hiking,1234567930,"What elevation is this?",2025-11-19T16:00:50.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123497,urban_gardening,1234567931,"Goals! 🌻",2025-11-19T16:03:14.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123498,pottery_studio,1234567932,"Handmade is the best!",2025-11-19T16:05:39.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123499,morning_coffee,1234567933,"Coffee time is the best time ☕",2025-11-19T16:08:03.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123500,ocean_lover,1234567934,"The ocean is calling 🌊",2025-11-19T16:10:28.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123501,ballet_dancer,1234567935,"Graceful! 🩰",2025-11-19T16:12:52.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123502,dessert_heaven,1234567936,"Sweet tooth activated! 🍩",2025-11-19T16:15:17.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123503,journaling_daily,1234567937,"Love this idea!",2025-11-19T16:17:41.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123504,architecture_love,1234567938,"The design is stunning!",2025-11-19T16:20:06.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123505,thrift_shopping,1234567939,"Thrifted finds are the best!",2025-11-19T16:22:30.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123506,camping_trips,1234567940,"Into the wild! 🏕️",2025-11-19T16:24:55.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123507,calligraphy_art,1234567941,"Your lettering is beautiful!",2025-11-19T16:27:19.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123508,matcha_lover,1234567942,"Matcha everything! 🍵",2025-11-19T16:29:44.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123509,stargazing_nights,1234567943,"The stars are incredible! ⭐",2025-11-19T16:32:08.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123510,vintage_camera,1234567944,"Analog vibes!",2025-11-19T16:34:33.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123511,pasta_lover,1234567945,"Carbs forever! 🍝",2025-11-19T16:36:57.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123512,interior_design,1234567946,"Your space is gorgeous!",2025-11-19T16:39:22.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123513,skateboard_life,1234567947,"Sick trick!",2025-11-19T16:41:46.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123514,candle_maker,1234567948,"What scent is this?",2025-11-19T16:44:11.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123515,wildlife_photo,1234567949,"Nature is amazing! 🦋",2025-11-19T16:46:35.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123516,vinyl_collector,1234567950,"Classic album!",2025-11-19T16:49:00.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123517,morning_yoga,1234567951,"Namaste 🙏",2025-11-19T16:51:24.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123518,pizza_obsessed,1234567952,"Pizza is life! 🍕",2025-11-19T16:53:49.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123519,waterfall_hunter,1234567953,"This is breathtaking!",2025-11-19T16:56:13.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123520,embroidery_art,1234567954,"The detail is incredible! 🧵",2025-11-19T16:58:38.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123521,sushi_addict,1234567955,"Fresh sushi is the best! 🍣",2025-11-19T17:01:02.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123522,road_trip,1234567956,"Where to next?",2025-11-19T17:03:27.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123523,macrame_love,1234567957,"Your knots are perfect!",2025-11-19T17:05:51.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123524,sunrise_runs,1234567958,"Early bird gets the worm! 🌄",2025-11-19T17:08:16.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123525,tea_enthusiast,1234567959,"Tea time! 🫖",2025-11-19T17:10:40.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123526,graffiti_art,1234567960,"Street art at its finest!",2025-11-19T17:13:05.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123527,breakfast_club,1234567961,"Breakfast goals! 🥞",2025-11-19T17:15:29.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123528,kayaking_fun,1234567962,"Paddle on! 🚣",2025-11-19T17:17:54.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123529,succulent_garden,1234567963,"Succulent collection envy! 🌵",2025-11-19T17:20:18.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123530,guitar_player,1234567964,"Loving the sound!",2025-11-19T17:22:43.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123531,acai_bowl,1234567965,"Healthy and delicious! 🥥",2025-11-19T17:25:07.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123532,northern_lights,1234567966,"Aurora dreams! 💚",2025-11-19T17:27:32.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123533,scrapbooking,1234567967,"Memories preserved!",2025-11-19T17:29:56.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123534,ice_cream_lover,1234567968,"Every flavor please! 🍦",2025-11-19T17:32:21.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123535,cliff_jumping,1234567969,"Living on the edge!",2025-11-19T17:34:45.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123536,knitting_projects,1234567970,"Cozy vibes! 🧶",2025-11-19T17:37:10.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123537,burrito_bowl,1234567971,"Burrito bowls > regular burritos 🌯",2025-11-19T17:39:34.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123538,lighthouse_views,1234567972,"Coastal beauty!",2025-11-19T17:41:59.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123539,origami_master,1234567973,"Paper art is so cool!",2025-11-19T17:44:23.000Z,https://instagram.com/profile_pic.jpg,false
+18234567890123540,sarah_johnson,1234567890,"Thanks everyone! 💜",2025-11-19T17:46:48.000Z,https://instagram.com/profile_pic.jpg,true
+18234567890123541,photography_daily,1234567895,"Sony A7III!",2025-11-19T17:49:12.000Z,https://instagram.com/profile_pic.jpg,true
+18234567890123542,fashion_style,1234567899,"Check my bio for links!",2025-11-19T17:51:37.000Z,https://instagram.com/profile_pic.jpg,true
+18234567890123543,baker_daily,1234567910,"I'll share it soon!",2025-11-19T17:54:01.000Z,https://instagram.com/profile_pic.jpg,true
+18234567890123544,skincare_tips,1234567913,"Mostly CeraVe and The Ordinary",2025-11-19T17:56:26.000Z,https://instagram.com/profile_pic.jpg,true
+18234567890123545,city_explorer,1234567923,"Barcelona! 🇪🇸",2025-11-19T17:58:50.000Z,https://instagram.com/profile_pic.jpg,true
+18234567890123546,cycling_adventures,1234567926,"About 50 miles coastal route",2025-11-19T18:01:15.000Z,https://instagram.com/profile_pic.jpg,true
+18234567890123547,mountain_hiking,1234567930,"Around 8000 ft elevation",2025-11-19T18:03:39.000Z,https://instagram.com/profile_pic.jpg,true
+18234567890123548,candle_maker,1234567948,"Vanilla lavender blend!",2025-11-19T18:06:04.000Z,https://instagram.com/profile_pic.jpg,true
+18234567890123549,road_trip,1234567956,"Heading to Portland next!",2025-11-19T18:08:28.000Z,https://instagram.com/profile_pic.jpg,true

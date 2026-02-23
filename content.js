@@ -1,30 +1,37 @@
-// Global flag to track if scraping should be cancelled
-let shouldCancelScraping = false;
+// Global flag to track if scraping should be cancelled (var allows re-declaration)
+var shouldCancelScraping = false;
+
+// Remove previous listener if script is re-injected
+if (typeof window.__giveawayMessageListener !== 'undefined') {
+  chrome.runtime.onMessage.removeListener(window.__giveawayMessageListener);
+}
 
 // Listen for messages from popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+window.__giveawayMessageListener = (request, sender, sendResponse) => {
   if (request.action === 'scrapeComments') {
     const delaySeconds = request.delaySeconds || 10; // Default 10 seconds
+    const instagramUrl = request.instagramUrl; // Capture URL from sidepanel
     
     // Reset cancel flag when starting new scrape
     shouldCancelScraping = false;
     
-    // Progress callback to send updates back to popup
+    // Progress callback to send updates back to sidepanel
+    // Fire-and-forget: never cancel the scrape due to messaging failures.
+    // The sidepanel may not always be listening (e.g. during tab switches)
+    // but scraping should continue regardless.
     const sendProgress = (progress) => {
       try {
         chrome.runtime.sendMessage({
           action: 'progress',
           data: progress
-        });
-      } catch (error) {
-        // Popup was closed, cancel the scraping
-        console.log('Popup closed, cancelling scrape...');
-        shouldCancelScraping = true;
+        }).catch(() => { /* sidepanel may not be listening — ignore */ });
+      } catch (e) {
+        // Extension context invalidated — ignore
       }
     };
 
-    // Use GraphQL API to fetch comments
-    fetchCommentsViaGraphQL(sendProgress, delaySeconds)
+    // Use GraphQL API to fetch comments with provided URL
+    fetchCommentsViaGraphQL(sendProgress, delaySeconds, instagramUrl)
       .then(result => {
         if (!shouldCancelScraping) {
           try {
@@ -63,6 +70,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Keep message channel open for async response
   }
   
+  if (request.action === 'ping') {
+    sendResponse({ alive: true });
+    return true;
+  }
+
   if (request.action === 'cancelScrape') {
     shouldCancelScraping = true;
     console.log('Scraping cancelled by user');
@@ -71,17 +83,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
   
   return false;
-});
+};
+chrome.runtime.onMessage.addListener(window.__giveawayMessageListener);
 
-// Extract shortcode from current URL
-function getShortcodeFromUrl() {
-  const match = window.location.pathname.match(/\/p\/([^\/]+)/);
+// Extract shortcode from URL (use provided URL or current page)
+function getShortcodeFromUrl(url = null) {
+  const targetUrl = url || window.location.href;
+  const match = targetUrl.match(/\/p\/([^\/]+)/);
   return match ? match[1] : null;
 }
 
 // Fetch comments using Instagram's GraphQL API
-async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
-  const shortcode = getShortcodeFromUrl();
+async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10, instagramUrl = null) {
+  const shortcode = getShortcodeFromUrl(instagramUrl);
   if (!shortcode) {
     throw new Error('Could not extract post shortcode from URL');
   }
@@ -94,8 +108,10 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
   let totalCommentCount = 0;
   let stuckCounter = 0; // Track if we're stuck at same count
   let lastCommentCount = 0;
-  const MAX_REQUESTS = 100; // Safety limit
-  const MAX_STUCK_ITERATIONS = 2; // If count doesn't change for 2 requests, stop
+  const MAX_REQUESTS = 1000; // Safety limit (supports up to ~50,000 comments)
+  const MAX_STUCK_ITERATIONS = 3; // If count doesn't change for 3 requests, stop
+  let totalLatencyMs = 0;
+  let latencyCount = 0;
 
   console.log(`Starting to fetch comments for post: ${shortcode}`);
   console.log(`Using ${delaySeconds} second delay between requests`);
@@ -117,16 +133,13 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
         after: endCursor
       };
 
-      const url = `https://www.instagram.com/graphql/query/?query_hash=bc3296d1ce80a24b1b6e40b1e72903f5&variables=${encodeURIComponent(JSON.stringify(variables))}`;
+      const url = `https://www.instagram.com/graphql/query/?query_hash=33ba35852cb50da46f5b5e889df7d159&variables=${encodeURIComponent(JSON.stringify(variables))}`;
       
       console.log(`Fetching batch ${requestCount} (after: ${endCursor || 'start'})`);
-      
+
+      const fetchStart = Date.now();
       const response = await fetch(url, {
         method: 'GET',
-        headers: {
-          'x-ig-app-id': '936619743392459', // Instagram web app ID
-          'x-requested-with': 'XMLHttpRequest'
-        },
         credentials: 'include' // Include cookies for authentication
       });
 
@@ -135,10 +148,15 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
       }
 
       const data = await response.json();
+      const latencyMs = Date.now() - fetchStart;
+      totalLatencyMs += latencyMs;
+      latencyCount++;
       
       // Navigate to comments data
-      const edges = data?.data?.shortcode_media?.edge_media_to_parent_comment?.edges || [];
-      const pageInfo = data?.data?.shortcode_media?.edge_media_to_parent_comment?.page_info;
+      const commentData = data?.data?.shortcode_media?.edge_media_to_comment 
+        || data?.data?.shortcode_media?.edge_media_to_parent_comment;
+      const edges = commentData?.edges || [];
+      const pageInfo = commentData?.page_info;
       
       // Extract post owner and total count from first response
       if (!postOwner && data?.data?.shortcode_media?.owner?.username) {
@@ -146,9 +164,13 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
       }
       
       // Get total comment count from first response
-      if (totalCommentCount === 0 && data?.data?.shortcode_media?.edge_media_to_parent_comment?.count) {
-        totalCommentCount = data.data.shortcode_media.edge_media_to_parent_comment.count;
-        console.log(`Total comments to fetch: ${totalCommentCount}`);
+      if (totalCommentCount === 0) {
+        const countData = data?.data?.shortcode_media?.edge_media_to_comment 
+          || data?.data?.shortcode_media?.edge_media_to_parent_comment;
+        if (countData?.count) {
+          totalCommentCount = countData.count;
+          console.log(`Total comments to fetch: ${totalCommentCount}`);
+        }
       }
 
       console.log(`Received ${edges.length} comments. Has next page: ${pageInfo?.has_next_page}`);
@@ -204,23 +226,16 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
         lastCommentCount = allComments.length;
       }
 
-      // Send progress update
+      // Send progress update (lightweight — no comments array)
       if (sendProgress) {
-        try {
-          const progress = {
-            current: allComments.length,
-            total: Math.max(totalCommentCount, allComments.length), // Use max to handle count mismatches
-            percent: totalCommentCount ? Math.min(100, Math.round((allComments.length / totalCommentCount) * 100)) : 0,
-            comments: allComments, // Include current comments for cancellation
-            postOwner: postOwner
-          };
-          sendProgress(progress);
-        } catch (error) {
-          // Popup closed, cancel scraping
-          console.log('Progress update failed (popup closed), cancelling...');
-          shouldCancelScraping = true;
-          break;
-        }
+        sendProgress({
+          current: allComments.length,
+          total: Math.max(totalCommentCount, allComments.length),
+          percent: totalCommentCount ? Math.min(100, Math.round((allComments.length / totalCommentCount) * 100)) : 0,
+          comments: allComments,
+          postOwner: postOwner,
+          avgLatencyMs: latencyCount > 0 ? totalLatencyMs / latencyCount : null
+        });
       }
 
       // Check if there are more pages
@@ -246,21 +261,14 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
           }
           
           if (sendProgress) {
-            try {
+              // Only send lightweight countdown data (no comments array)
               sendProgress({
                 current: allComments.length,
                 total: Math.max(totalCommentCount, allComments.length),
                 percent: totalCommentCount ? Math.min(100, Math.round((allComments.length / totalCommentCount) * 100)) : 0,
                 countdown: i,
-                comments: allComments,
-                postOwner: postOwner
+                avgLatencyMs: latencyCount > 0 ? totalLatencyMs / latencyCount : null
               });
-            } catch (error) {
-              // Popup closed, cancel scraping
-              console.log('Countdown update failed (popup closed), cancelling...');
-              shouldCancelScraping = true;
-              break;
-            }
           }
           
           // Wait 1 second but check cancellation every 100ms
@@ -286,7 +294,10 @@ async function fetchCommentsViaGraphQL(sendProgress, delaySeconds = 10) {
     }
   }
 
-  console.log(`Finished fetching. Total comments: ${allComments.length}`);
+  if (requestCount >= MAX_REQUESTS) {
+    console.warn(`Hit MAX_REQUESTS limit (${MAX_REQUESTS}). Fetched ${allComments.length} of ${totalCommentCount} comments.`);
+  }
+  console.log(`Finished fetching. Total comments: ${allComments.length} (${requestCount} requests)`);
   
   return {
     comments: allComments,
