@@ -8,6 +8,171 @@ async function fetchCommentBatch(shortcode, endCursor) {
   return resp.json();
 }
 
+// Executed inside a YouTube tab to extract page data needed for comment fetching.
+// Must be fully self-contained — no closures allowed.
+function getYouTubePageData() {
+  const log = [];
+  let continuationToken = null;
+  let channelOwner = null;
+  let clientVersion = '2.20260101.00.00';
+  let apiKey = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
+
+  // Get client config from YouTube's global
+  if (window.ytcfg && typeof window.ytcfg.get === 'function') {
+    const cv = window.ytcfg.get('INNERTUBE_CLIENT_VERSION');
+    if (cv) clientVersion = cv;
+    const ak = window.ytcfg.get('INNERTUBE_API_KEY');
+    if (ak) apiKey = ak;
+    log.push(`ytcfg found: clientVersion=${cv}, apiKey=${ak ? 'yes' : 'no'}`);
+  } else {
+    log.push('ytcfg NOT found on window');
+  }
+
+  // Get channel owner from player response
+  try {
+    if (window.ytInitialPlayerResponse?.videoDetails) {
+      channelOwner = window.ytInitialPlayerResponse.videoDetails.author || null;
+      log.push(`channelOwner from ytInitialPlayerResponse: ${channelOwner}`);
+    } else {
+      log.push('ytInitialPlayerResponse.videoDetails not found');
+    }
+  } catch(e) { log.push('ytInitialPlayerResponse error: ' + e.message); }
+
+  // Helper: extract continuation token from an itemSectionRenderer's contents
+  const extractToken = (sectionContents) => {
+    if (!sectionContents) return null;
+    for (const content of sectionContents) {
+      if (content.continuationItemRenderer) {
+        return content.continuationItemRenderer
+          .continuationEndpoint?.continuationCommand?.token
+          || content.continuationItemRenderer.button?.buttonRenderer
+            ?.command?.continuationCommand?.token
+          || null;
+      }
+    }
+    return null;
+  };
+
+  // Try to get ytInitialData from multiple sources
+  let data = null;
+  try { data = window.ytInitialData; } catch(e) {}
+  log.push(`ytInitialData from window: ${data ? 'yes' : 'no'}`);
+
+  // Fallback: parse from script tags if the global was cleared (SPA navigation)
+  if (!data) {
+    try {
+      const scripts = document.querySelectorAll('script:not([src])');
+      let foundTag = false;
+      for (const script of scripts) {
+        const text = script.textContent;
+        if (text && text.includes('ytInitialData')) {
+          foundTag = true;
+          const match = text.match(/ytInitialData\s*=\s*(\{.+?\})\s*;/s);
+          if (match) { data = JSON.parse(match[1]); log.push('ytInitialData parsed from script tag'); break; }
+          else { log.push('ytInitialData script tag found but regex did not match'); }
+        }
+      }
+      if (!foundTag) log.push('No script tag containing ytInitialData found');
+    } catch(e) { log.push('Script tag parse error: ' + e.message); }
+  }
+
+  if (data) {
+    const twoCol = data?.contents?.twoColumnWatchNextResults;
+    log.push(`twoColumnWatchNextResults: ${twoCol ? 'yes' : 'no'}`);
+    const contents = twoCol?.results?.results?.contents;
+    log.push(`contents array: ${contents ? `yes (${contents.length} items)` : 'no'}`);
+
+    if (contents && Array.isArray(contents)) {
+      // Log all section types for debugging
+      const sectionInfo = contents.map((item, i) => {
+        const keys = Object.keys(item);
+        const sec = item.itemSectionRenderer;
+        return `[${i}] ${keys.join(',')} sectionId=${sec?.sectionIdentifier || 'none'} contentsLen=${sec?.contents?.length || 0}`;
+      });
+      log.push('Sections: ' + sectionInfo.join(' | '));
+
+      // Strategy 1: target the comment section by sectionIdentifier
+      for (const item of contents) {
+        const section = item.itemSectionRenderer;
+        if (section?.sectionIdentifier === 'comment-item-section') {
+          log.push('Found comment-item-section');
+          const token = extractToken(section.contents);
+          if (token) { continuationToken = token; log.push('Token from Strategy 1'); break; }
+          else { log.push('comment-item-section had no continuationItemRenderer'); }
+        }
+      }
+
+      // Strategy 2: fallback — try any itemSectionRenderer with a continuationItemRenderer
+      if (!continuationToken) {
+        for (const item of contents) {
+          const section = item.itemSectionRenderer;
+          if (section?.contents) {
+            const token = extractToken(section.contents);
+            if (token) { continuationToken = token; log.push('Token from Strategy 2'); break; }
+          }
+        }
+      }
+    }
+
+    // Strategy 3: search engagement panels
+    if (!continuationToken && data?.engagementPanels) {
+      log.push(`engagementPanels: ${data.engagementPanels.length} panels`);
+      for (const panel of data.engagementPanels) {
+        const panelId = panel.engagementPanelSectionListRenderer?.panelIdentifier || 'unknown';
+        const sectionContents = panel.engagementPanelSectionListRenderer
+          ?.content?.sectionListRenderer?.contents;
+        if (sectionContents) {
+          for (const section of sectionContents) {
+            if (section.itemSectionRenderer?.contents) {
+              const token = extractToken(section.itemSectionRenderer.contents);
+              if (token) { continuationToken = token; log.push(`Token from engagement panel: ${panelId}`); break; }
+            }
+          }
+        }
+        if (continuationToken) break;
+      }
+    }
+  }
+
+  if (!continuationToken) log.push('NO continuation token found from any strategy');
+
+  return { continuationToken, channelOwner, clientVersion, apiKey, log };
+}
+
+// Fallback: fetch YouTube page data via InnerTube API when ytInitialData is unavailable.
+// Must be fully self-contained — no closures allowed.
+async function fetchYouTubePageViaApi(videoId, clientVersion, apiKey) {
+  const url = `https://www.youtube.com/youtubei/v1/next?key=${apiKey}&prettyPrint=false`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      context: { client: { clientName: 'WEB', clientVersion } },
+      videoId
+    })
+  });
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  return resp.json();
+}
+
+// Executed inside a YouTube tab to fetch a batch of comments.
+// Must be fully self-contained — no closures allowed.
+async function fetchYouTubeCommentBatch(continuation, clientVersion, apiKey) {
+  const url = `https://www.youtube.com/youtubei/v1/next?key=${apiKey}&prettyPrint=false`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      context: { client: { clientName: 'WEB', clientVersion } },
+      continuation
+    })
+  });
+  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`);
+  return resp.json();
+}
+
 // Side panel script - handles UI interaction
 document.addEventListener('DOMContentLoaded', () => {
   const scrapeBtn = document.getElementById('scrapeBtn');
@@ -26,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const delayValue = document.getElementById('delayValue');
   const instructionsToggle = document.getElementById('instructionsToggle');
   const instructionsContent = document.getElementById('instructionsContent');
-  const instagramUrlInput = document.getElementById('instagramUrl');
+  const postUrlInput = document.getElementById('postUrl');
   const urlError = document.getElementById('urlError');
   let isProcessing = false;
   let scrapingTabId = null; // Track which tab is running the scrape
@@ -87,7 +252,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Download button
       if (panelState.downloadReady && panelState.downloadComments?.length > 0) {
         lastDownloadedComments = panelState.downloadComments;
-        lastDownloadFilename = panelState.downloadFilename || `instagram-comments-${Date.now()}.csv`;
+        lastDownloadFilename = panelState.downloadFilename || `comments-${Date.now()}.csv`;
         redownloadBtn.textContent = panelState.downloadLabel || 'Download CSV File';
         redownloadBtn.style.display = 'block';
       }
@@ -133,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const historyToggle = document.getElementById('historyToggle');
   const historyTable = document.getElementById('historyTable');
   const historyBody = document.getElementById('historyBody');
-  let runHistory = []; // { id, filename, csv, date, commentCount, shortcode }
+  let runHistory = []; // { id, filename, csv, date, commentCount, shortcode, platform }
 
   // Toggle history section
   historyToggle.addEventListener('click', () => {
@@ -156,14 +321,15 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.set({ runHistory }).catch(() => {});
   }
 
-  function addHistoryEntry(filename, csvContent, commentCount, shortcode) {
+  function addHistoryEntry(filename, csvContent, commentCount, postId, platform) {
     const entry = {
       id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       filename,
       csv: csvContent,
       date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       commentCount,
-      shortcode: shortcode || ''
+      shortcode: postId || '',
+      platform: platform || 'instagram'
     };
     runHistory.unshift(entry);
     // Keep last 50 entries to avoid storage bloat
@@ -199,11 +365,16 @@ document.addEventListener('DOMContentLoaded', () => {
       tdPost.className = 'history-td-post';
       if (entry.shortcode) {
         const link = document.createElement('a');
-        link.href = `https://www.instagram.com/p/${entry.shortcode}/`;
+        if (entry.platform === 'youtube') {
+          link.href = `https://www.youtube.com/watch?v=${entry.shortcode}`;
+          link.title = `Open video on YouTube`;
+        } else {
+          link.href = `https://www.instagram.com/p/${entry.shortcode}/`;
+          link.title = `Open post ${entry.shortcode} on Instagram`;
+        }
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
         link.textContent = entry.shortcode;
-        link.title = `Open post ${entry.shortcode} on Instagram`;
         tdPost.appendChild(link);
       } else {
         tdPost.textContent = entry.filename;
@@ -252,16 +423,53 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize slider progress
   updateSliderProgress();
   
+  // ── Platform detection helpers ────────────────────────────────
+  function detectPlatform(url) {
+    if (/instagram\.com\/(p|reel)\/[\w-]+/.test(url)) return 'instagram';
+    if (/(?:youtube\.com\/(?:watch|shorts)|youtu\.be\/)/.test(url)) return 'youtube';
+    return null;
+  }
+
+  function extractVideoId(url) {
+    const match = url.match(/(?:youtube\.com\/watch\?.*v=|youtu\.be\/|youtube\.com\/shorts\/)([\w-]+)/);
+    return match?.[1] || null;
+  }
+
   // Auto-fill URL from current tab
   let userManuallyEdited = false; // True once user types/pastes in the input
   
+  const currentPageBadge = document.getElementById('currentPageBadge');
+
+  const setCurrentPageBadge = (visible) => {
+    if (visible) currentPageBadge.classList.remove('hidden');
+    else currentPageBadge.classList.add('hidden');
+  };
+
   const autoFillUrl = async () => {
     if (isProcessing || userManuallyEdited) return;
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (tab?.url && tab.url.match(/instagram\.com\/p\//)) {
-        instagramUrlInput.value = tab.url.split('?')[0]; // Strip query params
-        validateUrl();
+      if (tab?.url) {
+        if (tab.url.match(/instagram\.com\/(p|reel)\//)) {
+          postUrlInput.value = tab.url.split('?')[0];
+          validateUrl();
+          setCurrentPageBadge(true);
+        } else if (tab.url.match(/youtube\.com\/watch/)) {
+          const vid = tab.url.match(/[?&]v=([\w-]+)/)?.[1];
+          if (vid) {
+            postUrlInput.value = `https://www.youtube.com/watch?v=${vid}`;
+            validateUrl();
+            setCurrentPageBadge(true);
+          }
+        } else if (tab.url.match(/youtube\.com\/shorts\//)) {
+          postUrlInput.value = tab.url.split('?')[0];
+          validateUrl();
+          setCurrentPageBadge(true);
+        } else {
+          setCurrentPageBadge(false);
+        }
+      } else {
+        setCurrentPageBadge(false);
       }
     } catch (e) {
       console.log('Could not auto-fill URL:', e);
@@ -271,8 +479,9 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Stop auto-filling once the user manually edits the input
   // If the user clears the input, resume auto-filling
-  instagramUrlInput.addEventListener('input', () => {
-    userManuallyEdited = instagramUrlInput.value.trim().length > 0;
+  postUrlInput.addEventListener('input', () => {
+    userManuallyEdited = postUrlInput.value.trim().length > 0;
+    setCurrentPageBadge(false);
   });
   
   // Re-fill URL when tab changes
@@ -284,8 +493,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // URL validation
   function validateUrl() {
-    const url = instagramUrlInput.value.trim();
-    instagramUrlInput.classList.remove('valid', 'invalid');
+    const url = postUrlInput.value.trim();
+    postUrlInput.classList.remove('valid', 'invalid');
     urlError.classList.remove('visible');
     urlError.textContent = '';
     
@@ -293,9 +502,10 @@ document.addEventListener('DOMContentLoaded', () => {
       return false;
     }
     
-    if (!url.match(/instagram\.com\/p\/[\w-]+/)) {
-      instagramUrlInput.classList.add('invalid');
-      urlError.textContent = 'Must be an Instagram post URL (e.g. instagram.com/p/ABC123)';
+    const platform = detectPlatform(url);
+    if (!platform) {
+      postUrlInput.classList.add('invalid');
+      urlError.textContent = 'Enter an Instagram post URL or YouTube video URL';
       urlError.classList.add('visible');
       return false;
     }
@@ -303,8 +513,8 @@ document.addEventListener('DOMContentLoaded', () => {
     return true;
   }
   
-  instagramUrlInput.addEventListener('input', validateUrl);
-  instagramUrlInput.addEventListener('blur', validateUrl);
+  postUrlInput.addEventListener('input', validateUrl);
+  postUrlInput.addEventListener('blur', validateUrl);
   
   // Check if there's a completed fetch waiting (from previous session)
   chrome.storage.local.get(['completedFetch'], (result) => {
@@ -314,7 +524,8 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Store for manual download
       lastDownloadedComments = data.comments;
-      lastDownloadFilename = `instagram-comments-${data.shortcode || Date.now()}.csv`;
+      const prefix = data.platform === 'youtube' ? 'youtube-comments' : 'instagram-comments';
+      lastDownloadFilename = `${prefix}-${data.shortcode || Date.now()}.csv`;
       redownloadBtn.textContent = 'Download CSV File';
       redownloadBtn.style.display = 'block';
       
@@ -409,7 +620,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (result.error) throw new Error(result.error.message || 'Script execution error');
         data = result.result;
       } catch (err) {
-        console.error(`[SCRAPE] Batch ${requestCount} error:`, err);
+        console.error(`Batch ${requestCount} error:`, err);
         break;
       }
 
@@ -509,6 +720,255 @@ document.addEventListener('DOMContentLoaded', () => {
     return { comments: allComments, postOwner };
   }
 
+  // ── YouTube scrape loop — runs in sidepanel, executes each fetch inside the YouTube tab ──
+  async function runYouTubeScrape(tabId, videoId, delaySeconds) {
+    const allComments = [];
+    let hasNextPage = true;
+    let continuation = null;
+    let postOwner = null;
+    let requestCount = 0;
+    let totalCommentCount = 0;
+    let stuckCounter = 0;
+    let lastCommentCount = 0;
+    const MAX_REQUESTS = 2000; // YouTube returns ~20 per batch
+    const MAX_STUCK_ITERATIONS = 3;
+    let totalLatencyMs = 0;
+    let latencyCount = 0;
+    let clientVersion = '2.20260101.00.00';
+    let apiKey = 'AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8';
+
+    // Step 1: Get client config (apiKey, clientVersion, channelOwner) from the injected page.
+    // NOTE: window.ytInitialData is NOT reliable after SPA navigation — YouTube updates the DOM
+    // dynamically but does not reassign the global. We still want the client config from ytcfg
+    // (which IS updated), but we always derive the continuation token from the API call below.
+    try {
+      const [pageDataResult] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: getYouTubePageData
+      });
+      if (pageDataResult.error) throw new Error(pageDataResult.error.message);
+      const pageData = pageDataResult.result;
+      postOwner = pageData.channelOwner;
+      clientVersion = pageData.clientVersion || clientVersion;
+      apiKey = pageData.apiKey || apiKey;
+      // Do NOT use pageData.continuationToken — ytInitialData can be stale after SPA navigation.
+    } catch (err) { /* page config unavailable, defaults will be used */ }
+
+    // Step 1b: Always fetch the initial continuation token via InnerTube API with the videoId.
+    // This guarantees we are fetching comments for the correct current video regardless of
+    // whether the user navigated via SPA (where ytInitialData stays stale).
+    try {
+      const [apiResult] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: fetchYouTubePageViaApi,
+        args: [videoId, clientVersion, apiKey]
+      });
+      if (apiResult.error) throw new Error(apiResult.error.message);
+      const apiData = apiResult.result;
+
+      const contents = apiData?.contents?.twoColumnWatchNextResults?.results?.results?.contents;
+      if (contents && Array.isArray(contents)) {
+        // Try comment-item-section first, then any section with a continuationItemRenderer
+        for (const item of contents) {
+          const section = item.itemSectionRenderer;
+          if (section?.sectionIdentifier === 'comment-item-section' && section?.contents) {
+            for (const content of section.contents) {
+              if (content.continuationItemRenderer) {
+                continuation = content.continuationItemRenderer
+                  .continuationEndpoint?.continuationCommand?.token || null;
+                if (continuation) break;
+              }
+            }
+          }
+          if (continuation) break;
+        }
+        if (!continuation) {
+          for (const item of contents) {
+            const section = item.itemSectionRenderer;
+            if (section?.contents) {
+              for (const content of section.contents) {
+                if (content.continuationItemRenderer) {
+                  continuation = content.continuationItemRenderer
+                    .continuationEndpoint?.continuationCommand?.token || null;
+                  if (continuation) break;
+                }
+              }
+            }
+            if (continuation) break;
+          }
+        }
+
+        // Grab channel owner from API response if not already found
+        if (!postOwner) {
+          for (const item of contents) {
+            const owner = item.videoSecondaryInfoRenderer?.owner
+              ?.videoOwnerRenderer?.title?.runs?.[0]?.text;
+            if (owner) { postOwner = owner; break; }
+          }
+        }
+      }
+    } catch (err) { /* continuation token fetch failed */ }
+
+    if (!continuation) {
+      return { comments: [], postOwner: null };
+    }
+
+    // Step 2: Fetch comment batches
+    while (hasNextPage && requestCount < MAX_REQUESTS && !shouldCancelScraping) {
+      requestCount++;
+
+      const fetchStart = Date.now();
+      let data;
+      try {
+        const [result] = await chrome.scripting.executeScript({
+          target: { tabId },
+          func: fetchYouTubeCommentBatch,
+          args: [continuation, clientVersion, apiKey]
+        });
+        if (result.error) throw new Error(result.error.message || 'Script execution error');
+        data = result.result;
+      } catch (err) {
+        break;
+      }
+
+      const latencyMs = Date.now() - fetchStart;
+      totalLatencyMs += latencyMs;
+      latencyCount++;
+
+      // Parse response — comments are in onResponseReceivedEndpoints
+      const endpoints = data?.onResponseReceivedEndpoints || [];
+      let continuationItems = [];
+      for (const ep of endpoints) {
+        const items = ep.reloadContinuationItemsCommand?.continuationItems
+          || ep.appendContinuationItemsAction?.continuationItems
+          || [];
+        continuationItems = continuationItems.concat(items);
+      }
+
+      // Build entity lookup from frameworkUpdates.entityBatchUpdate.mutations
+      // (YouTube's new commentViewModel format stores data here)
+      const entityMap = {};
+      const mutations = data?.frameworkUpdates?.entityBatchUpdate?.mutations || [];
+      for (const mutation of mutations) {
+        if (mutation.payload?.commentEntityPayload) {
+          const entity = mutation.payload.commentEntityPayload;
+          entityMap[entity.properties?.commentId || mutation.entityKey] = entity;
+        }
+      }
+
+      // Extract total count from header (first response only)
+      if (totalCommentCount === 0) {
+        for (const item of continuationItems) {
+          const header = item.commentsHeaderRenderer;
+          if (header) {
+            const countText = header.countText?.runs?.[0]?.text
+              || header.commentsCount?.simpleText || '';
+            const num = parseInt(countText.replace(/[^0-9]/g, ''), 10);
+            if (num > 0) totalCommentCount = num;
+          }
+        }
+      }
+
+      // Extract comments and next continuation
+      let nextContinuation = null;
+      for (const item of continuationItems) {
+        if (item.commentThreadRenderer) {
+          const thread = item.commentThreadRenderer;
+
+          // ── New format: commentViewModel + entityBatchUpdate ──
+          const viewModel = thread.commentViewModel?.commentViewModel;
+          if (viewModel?.commentId) {
+            const entity = entityMap[viewModel.commentId];
+            if (entity) {
+              allComments.push({
+                comment_id: entity.properties?.commentId || viewModel.commentId,
+                username: (entity.author?.displayName || 'unknown').replace(/^@/, ''),
+
+                user_id: entity.author?.channelId || '',
+                comment_text: entity.properties?.content?.content || '',
+                timestamp: entity.properties?.publishedTime || 'unknown',
+                profile_pic_url: entity.avatar?.image?.sources?.[0]?.url
+                  || entity.author?.avatarThumbnailUrl || '',
+                is_reply: false
+              });
+            }
+          } else {
+            // ── Legacy format: commentRenderer ──
+            const renderer = thread.comment?.commentRenderer;
+            if (renderer) {
+              const commentText = (renderer.contentText?.runs || [])
+                .map(r => r.text).join('');
+              allComments.push({
+                comment_id: renderer.commentId || '',
+                username: (renderer.authorText?.simpleText || 'unknown').replace(/^@/, ''),
+                user_id: renderer.authorEndpoint?.browseEndpoint?.browseId || '',
+                comment_text: commentText,
+                timestamp: renderer.publishedTimeText?.runs?.[0]?.text || 'unknown',
+                profile_pic_url: renderer.authorThumbnail?.thumbnails?.slice(-1)[0]?.url || '',
+                is_reply: false
+              });
+            }
+          }
+        }
+        // Next page continuation
+        if (item.continuationItemRenderer) {
+          nextContinuation = item.continuationItemRenderer.continuationEndpoint
+            ?.continuationCommand?.token
+            || item.continuationItemRenderer.button?.buttonRenderer?.command
+              ?.continuationCommand?.token
+            || null;
+        }
+      }
+
+      // Stuck detection
+      if (allComments.length === lastCommentCount) {
+        if (++stuckCounter >= MAX_STUCK_ITERATIONS) break;
+      } else {
+        stuckCounter = 0;
+        lastCommentCount = allComments.length;
+      }
+
+      // Update pagination
+      hasNextPage = !!nextContinuation;
+      continuation = nextContinuation;
+
+      // Update UI state
+      currentCollected = allComments.length;
+      currentTotal = Math.max(totalCommentCount, allComments.length);
+      currentPercent = totalCommentCount
+        ? Math.min(100, Math.round((allComments.length / totalCommentCount) * 100))
+        : 0;
+      currentComments = allComments;
+      currentPostOwner = postOwner;
+
+      // Recalculate time estimate (YouTube returns ~20 per batch)
+      const remaining = Math.max(0, currentTotal - currentCollected);
+      if (remaining > 0) {
+        rollingLatencyMs = rollingLatencyMs * 0.7 + (totalLatencyMs / latencyCount) * 0.3;
+        estimatedSecondsRemaining = Math.ceil(remaining / 20) * (delaySeconds + rollingLatencyMs / 1000);
+      } else {
+        estimatedSecondsRemaining = 0;
+      }
+      rebuildStatus();
+
+      // Early exit when close to total
+      if (totalCommentCount > 0 && allComments.length >= totalCommentCount - 5) break;
+
+      // Rate-limit countdown
+      if (hasNextPage && !shouldCancelScraping) {
+        displayCountdown = delaySeconds;
+        rebuildStatus();
+        for (let i = 0; i < delaySeconds * 10; i++) {
+          if (shouldCancelScraping) break;
+          await new Promise(r => setTimeout(r, 100));
+        }
+        displayCountdown = 0;
+      }
+    }
+
+    return { comments: allComments, postOwner };
+  }
+
   scrapeBtn.addEventListener('click', async () => {
     // Collapse instructions section when fetch starts
     if (!instructionsContent.classList.contains('collapsed')) {
@@ -525,24 +985,26 @@ document.addEventListener('DOMContentLoaded', () => {
     showStatus('Starting up…', 'info');
     
     // Validate URL input
-    const instagramUrl = instagramUrlInput.value.trim();
+    const postUrl = postUrlInput.value.trim();
     
-    if (!instagramUrl) {
-      instagramUrlInput.classList.add('invalid');
-      urlError.textContent = 'Please enter an Instagram post URL';
+    if (!postUrl) {
+      postUrlInput.classList.add('invalid');
+      urlError.textContent = 'Please enter an Instagram or YouTube URL';
       urlError.classList.add('visible');
-      showStatus('Error: Please enter an Instagram post URL.', 'error');
+      showStatus('Error: Please enter a post URL.', 'error');
       resetButton();
-      instagramUrlInput.focus();
+      postUrlInput.focus();
       return;
     }
     
     if (!validateUrl()) {
-      showStatus('Error: Invalid Instagram post URL.', 'error');
+      showStatus('Error: Invalid post URL.', 'error');
       resetButton();
-      instagramUrlInput.focus();
+      postUrlInput.focus();
       return;
     }
+    
+    const platform = detectPlatform(postUrl);
     
     // Hide re-download button when starting new fetch
     redownloadBtn.style.display = 'none';
@@ -551,14 +1013,13 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelBtn.style.display = 'block';
     delaySlider.disabled = true;
     document.getElementById('excludePoster').disabled = true;
-    instagramUrlInput.disabled = true;
+    postUrlInput.disabled = true;
     
     // Get settings
     const excludePoster = document.getElementById('excludePoster').checked;
     const delaySeconds = parseInt(delaySlider.value);
     
     try {
-      // Find the Instagram tab to run the content script on
       // Helper: try to ping a tab's content script
       const ping = (tabId) => new Promise((resolve) => {
         chrome.tabs.sendMessage(tabId, { action: 'ping' }, (response) => {
@@ -569,8 +1030,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Helper: try to inject content script into a tab and verify it's alive
       const tryTab = async (targetTab) => {
-        if (!targetTab?.id || !targetTab.url?.includes('instagram.com')) return false;
-        // Skip tabs showing error pages
+        if (!targetTab?.id) return false;
+        const requiredDomain = platform === 'youtube' ? 'youtube.com' : 'instagram.com';
+        if (!targetTab.url?.includes(requiredDomain)) return false;
         if (targetTab.status !== 'complete' && targetTab.status !== 'loading') return false;
 
         // Already alive?
@@ -582,60 +1044,65 @@ document.addEventListener('DOMContentLoaded', () => {
           await new Promise(resolve => setTimeout(resolve, 500));
           return await ping(targetTab.id);
         } catch (err) {
-          console.log(`Injection failed on tab ${targetTab.id} (${targetTab.url}):`, err.message);
           return false;
         }
       };
 
-      showStatus('Connecting to Instagram…', 'info');
+      const platformLabel = platform === 'youtube' ? 'YouTube' : 'Instagram';
+      showStatus(`Connecting to ${platformLabel}…`, 'info');
 
       // Strategy: try multiple tabs until one works
       let tab = null;
 
-      // 1. Try to find a tab matching the exact shortcode
-      const matchingTabs = await chrome.tabs.query({ url: '*://www.instagram.com/p/*' });
-      const targetShortcode = instagramUrl.match(/\/p\/([\w-]+)/)?.[1];
+      if (platform === 'instagram') {
+        // ── Instagram tab discovery ──
+        const matchingTabs = await chrome.tabs.query({ url: '*://www.instagram.com/p/*' });
+        const targetShortcode = postUrl.match(/\/(?:p|reel)\/([\w-]+)/)?.[1];
 
-      console.log('[TAB SEARCH] Looking for shortcode:', targetShortcode);
-      console.log('[TAB SEARCH] Matching /p/* tabs:', matchingTabs.map(t => ({ id: t.id, url: t.url, status: t.status })));
+        const reelTabs = await chrome.tabs.query({ url: '*://www.instagram.com/reel/*' });
+        const allCandidates = [...matchingTabs, ...reelTabs];
 
-      // Also check reel tabs — Instagram sometimes serves posts as reels
-      const reelTabs = await chrome.tabs.query({ url: '*://www.instagram.com/reel/*' });
-      const allCandidates = [...matchingTabs, ...reelTabs];
-      console.log('[TAB SEARCH] Reel tabs:', reelTabs.map(t => ({ id: t.id, url: t.url, status: t.status })));
-
-      if (targetShortcode) {
-        const exactMatch = allCandidates.find(t => t.url.includes(`/p/${targetShortcode}`) || t.url.includes(`/reel/${targetShortcode}`));
-        console.log('[TAB SEARCH] Exact shortcode match:', exactMatch ? { id: exactMatch.id, url: exactMatch.url } : 'none');
-        if (exactMatch && await tryTab(exactMatch)) {
-          tab = exactMatch;
+        if (targetShortcode) {
+          const exactMatch = allCandidates.find(t => t.url.includes(`/p/${targetShortcode}`) || t.url.includes(`/reel/${targetShortcode}`));
+          if (exactMatch && await tryTab(exactMatch)) tab = exactMatch;
         }
-      }
 
-      // 2. Fallback: try the active tab (user might have the post open there)
-      if (!tab) {
-        const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
-        console.log('[TAB SEARCH] Active tab:', activeTab ? { id: activeTab.id, url: activeTab.url } : 'none');
-        if (activeTab?.url?.includes('instagram.com') && await tryTab(activeTab)) {
-          tab = activeTab;
-          console.log('[TAB SEARCH] Using active tab');
+        if (!tab) {
+          const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (activeTab?.url?.includes('instagram.com') && await tryTab(activeTab)) tab = activeTab;
         }
-      }
 
-      // 3. Fallback: try ANY open Instagram post tab
-      if (!tab) {
-        console.log('[TAB SEARCH] Trying any Instagram tab as last resort...');
-        for (const candidate of allCandidates) {
-          if (await tryTab(candidate)) {
-            tab = candidate;
-            console.log('[TAB SEARCH] Found working candidate:', { id: candidate.id, url: candidate.url });
-            break;
+        if (!tab) {
+          for (const candidate of allCandidates) {
+            if (await tryTab(candidate)) { tab = candidate; break; }
+          }
+        }
+      } else {
+        // ── YouTube tab discovery ──
+        const videoId = extractVideoId(postUrl);
+        const watchTabs = await chrome.tabs.query({ url: '*://www.youtube.com/watch*' });
+        const shortsTabs = await chrome.tabs.query({ url: '*://www.youtube.com/shorts/*' });
+        const allCandidates = [...watchTabs, ...shortsTabs];
+
+        if (videoId) {
+          const exactMatch = allCandidates.find(t => t.url.includes(`v=${videoId}`) || t.url.includes(`/shorts/${videoId}`));
+          if (exactMatch && await tryTab(exactMatch)) tab = exactMatch;
+        }
+
+        if (!tab) {
+          const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+          if (activeTab?.url?.includes('youtube.com') && await tryTab(activeTab)) tab = activeTab;
+        }
+
+        if (!tab) {
+          for (const candidate of allCandidates) {
+            if (await tryTab(candidate)) { tab = candidate; break; }
           }
         }
       }
 
       if (!tab) {
-        showStatus('⚠️ Could not connect to any Instagram tab. Please make sure you have the Instagram post open and refresh the page, then try again.', 'error');
+        showStatus(`⚠️ Could not connect to any ${platformLabel} tab. Please make sure you have the ${platform === 'youtube' ? 'YouTube video' : 'Instagram post'} open and refresh the page, then try again.`, 'error');
         resetButton();
         return;
       }
@@ -656,7 +1123,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 1000);
       }
 
-      const result = await runScrape(tab.id, targetShortcode, delaySeconds);
+      let result;
+      let postIdentifier;
+      if (platform === 'instagram') {
+        postIdentifier = postUrl.match(/\/(?:p|reel)\/([\w-]+)/)?.[1] || '';
+        result = await runScrape(tab.id, postIdentifier, delaySeconds);
+      } else {
+        postIdentifier = extractVideoId(postUrl) || '';
+        result = await runYouTubeScrape(tab.id, postIdentifier, delaySeconds);
+      }
 
       // Handle result
       let comments = result.comments;
@@ -664,13 +1139,15 @@ document.addEventListener('DOMContentLoaded', () => {
         comments = comments.filter(c => c.username !== result.postOwner);
       }
 
+      const filenamePrefix = platform === 'youtube' ? 'youtube-comments' : 'instagram-comments';
+
       if (shouldCancelScraping) {
         if (comments.length > 0) {
           lastDownloadedComments = comments;
-          lastDownloadFilename = `instagram-comments-${targetShortcode || Date.now()}.csv`;
+          lastDownloadFilename = `${filenamePrefix}-${postIdentifier || Date.now()}.csv`;
           // Record partial run in history
           const csv = convertToCSV(comments);
-          addHistoryEntry(lastDownloadFilename, csv, comments.length, targetShortcode);
+          addHistoryEntry(lastDownloadFilename, csv, comments.length, postIdentifier, platform);
           showStatus(`⚠️ Stopped. ${comments.length} comments collected — ready to download.`, 'success');
           redownloadBtn.textContent = 'Download CSV File';
           redownloadBtn.style.display = 'block';
@@ -683,18 +1160,18 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       if (comments.length === 0) {
-        showStatus('No comments found on this post. Try refreshing the Instagram page.', 'error');
+        showStatus(`No comments found on this ${platform === 'youtube' ? 'video' : 'post'}. Try refreshing the page.`, 'error');
         resetButton();
         saveState();
         return;
       }
 
       lastDownloadedComments = comments;
-      lastDownloadFilename = `instagram-comments-${targetShortcode || Date.now()}.csv`;
+      lastDownloadFilename = `${filenamePrefix}-${postIdentifier || Date.now()}.csv`;
 
       // Record completed run in history
       const csv = convertToCSV(comments);
-      addHistoryEntry(lastDownloadFilename, csv, comments.length, targetShortcode);
+      addHistoryEntry(lastDownloadFilename, csv, comments.length, postIdentifier, platform);
 
       let durationText = '';
       if (scrapeStartTime) {
@@ -764,7 +1241,7 @@ document.addEventListener('DOMContentLoaded', () => {
     cancelBtn.textContent = 'Cancel';
     delaySlider.disabled = false;
     document.getElementById('excludePoster').disabled = false;
-    instagramUrlInput.disabled = false;
+    postUrlInput.disabled = false;
     // Don't clear currentComments/currentPostOwner — they feed the download button
   }
   

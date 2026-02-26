@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Instagram Comment Collector</title>
+  <title>Comment Collector</title>
   <style>
     * {
       box-sizing: border-box;
@@ -102,6 +102,55 @@
       letter-spacing: 0.5px;
       color: #666666;
       margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .current-page-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      background: rgba(139, 92, 246, 0.12);
+      color: #7c3aed;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      padding: 2px 6px 2px 4px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      transition: opacity 0.2s ease;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .current-page-badge {
+        background: rgba(167, 139, 250, 0.15);
+        color: #c4b5fd;
+      }
+    }
+
+    .current-page-badge.hidden {
+      display: none;
+    }
+
+    .badge-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #8b5cf6;
+      flex-shrink: 0;
+      animation: badgePulse 2s ease-in-out infinite;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .badge-dot {
+        background: #a78bfa;
+      }
+    }
+
+    @keyframes badgePulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
     }
 
     .section-title.collapsible {
@@ -917,7 +966,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>Instagram Comment Collector <img src="icon48.png" alt="Icon" style="width: 24px; height: 24px; vertical-align: middle; margin-right: 8px;"></h1>
+    <h1>Comment Collector <img src="icon48.png" alt="Icon" style="width: 24px; height: 24px; vertical-align: middle; margin-right: 8px;"></h1>
 
     <div class="about">
       Export comments to use with <a href="https://luckypick.win/" target="_blank">Lucky Pick - The Transparent Giveaway Picker</a> for fair winner selection.
@@ -938,9 +987,9 @@
     </div>
     
     <div class="section">
-      <div class="section-title">Instagram Post URL</div>
+      <div class="section-title">Content URL <span id="currentPageBadge" class="current-page-badge hidden"><span class="badge-dot"></span>Current tab</span></div>
       <div class="url-input-wrapper">
-        <input type="text" id="instagramUrl" class="url-input" placeholder="https://www.instagram.com/p/ABC123xyz/" spellcheck="false" autocomplete="off" />
+        <input type="text" id="postUrl" class="url-input" placeholder="Instagram or YouTube URL" spellcheck="false" autocomplete="off" />
         <div id="urlError" class="url-error"></div>
       </div>
     </div>
@@ -950,7 +999,7 @@
       <div class="options">
         <label>
           <input type="checkbox" id="excludePoster" checked />
-          Exclude post owner's comments
+          Exclude content owner's comments
         </label>
       </div>
     </div>
@@ -959,8 +1008,8 @@
       <div class="section-title collapsible collapsed" id="rateLimitToggle">Rate Limiting</div>
       <div class="instructions collapsed" id="rateLimitContent">
         <strong>Why do we wait between requests?</strong>
-        <p style="margin: 6px 0 0 0;">Instagram limits how fast you can request data. Each request returns up to <strong>50 comments</strong> — that’s the maximum their API allows per call.</p>
-        <p style="margin: 6px 0 0 0;">To avoid being temporarily blocked, we pause between requests. A <strong>higher delay</strong> (~8-10s) looks like normal browsing. A lower delay is faster but risks Instagram rate-limiting your account, stopping the collection entirely.</p>
+        <p style="margin: 6px 0 0 0;">Instagram and YouTube limit how fast you can request data. Each request returns a batch of comments (up to 50 for Instagram, ~20 for YouTube).</p>
+        <p style="margin: 6px 0 0 0;">To avoid being temporarily blocked, we pause between requests. A <strong>higher delay</strong> (~8-10s) looks like normal browsing. A lower delay is faster but risks rate-limiting your account, stopping the collection entirely.</p>
       </div>
       <div class="options" style="margin-top: 8px;">
         <div style="display: block; margin-bottom: 10px; font-size: 14px; font-weight: 400;">Delay between requests (seconds):</div>
@@ -1016,7 +1065,7 @@
         <thead>
           <tr>
             <th class="history-th-comments">Comments</th>
-            <th class="history-th-post">Post</th>
+            <th class="history-th-post">Content</th>
             <th class="history-th-date">Date</th>
             <th class="history-th-actions" colspan="2"></th>
           </tr>

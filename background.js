@@ -27,12 +27,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return false;
 });
 
-// Optional: Set up side panel to be available only on Instagram post pages
+// Optional: Set up side panel to be available on Instagram and YouTube pages
 chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   if (!tab.url) return;
   
-  // Enable side panel on Instagram post pages
-  if (tab.url.includes('instagram.com/p/')) {
+  // Enable side panel on Instagram post pages and YouTube video pages
+  if (tab.url.includes('instagram.com/p/') || tab.url.includes('youtube.com/watch') || tab.url.includes('youtube.com/shorts/')) {
     await chrome.sidePanel.setOptions({
       tabId,
       path: 'sidepanel.html',
