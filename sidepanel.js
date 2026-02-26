@@ -197,8 +197,18 @@ document.addEventListener('DOMContentLoaded', () => {
       // Post cell
       const tdPost = document.createElement('td');
       tdPost.className = 'history-td-post';
-      tdPost.textContent = entry.shortcode || entry.filename;
-      tdPost.title = entry.shortcode || entry.filename;
+      if (entry.shortcode) {
+        const link = document.createElement('a');
+        link.href = `https://www.instagram.com/p/${entry.shortcode}/`;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = entry.shortcode;
+        link.title = `Open post ${entry.shortcode} on Instagram`;
+        tdPost.appendChild(link);
+      } else {
+        tdPost.textContent = entry.filename;
+        tdPost.title = entry.filename;
+      }
 
       // Date cell
       const tdDate = document.createElement('td');
