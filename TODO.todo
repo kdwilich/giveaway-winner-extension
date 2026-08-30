@@ -1,9 +1,17 @@
-[ ] Instagram post support
-[ ] Reels support
-[x] YouTube Video support
-[x] Youtube Shorts support
+[x] Instagram post support
+[x] Instagram Reels support
+[x] YouTube video support
+[x] YouTube Shorts support
+[x] Instagram reply-thread expansion (was silently truncated)
+[x] YouTube reply collection (was missing entirely)
+[x] Retry + adaptive backoff instead of stopping on the first error
+[x] Resume by cursor after worker termination
+[x] Stream results to luckypick.win instead of a CSV round-trip
+[x] Collection receipt (collected vs. reported, retries, failed threads)
+[ ] doc_id fallback for when the legacy query_hash goes stale
+[ ] Service-worker-direct fetch, so the post no longer needs to be open in a tab
 [ ] Twitter/X support
 [ ] Facebook support
 [ ] Reddit support
 [ ] TikTok support (doubtful)
-[ ] Filtered collection (e.g. only collect comments with a certain hashtag or keyword)
+[ ] Filtered collection (only comments matching a keyword or hashtag)

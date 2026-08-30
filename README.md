@@ -1,101 +1,110 @@
-# Instagram Comment Collector Chrome Extension
+# Comment Collector
 
-Export Instagram comments to CSV for use with the [Giveaway Picker](https://luckypick.win/).
+Collects every comment on an Instagram post or YouTube video — **including replies** — and
+streams them straight into [Lucky Pick](https://luckypick.win/) for the draw.
 
-> **📢 Coming Soon to Chrome Web Store!**  
-> We're currently working on publishing this extension to the Chrome Web Store. In the meantime, you can install it locally by following the instructions below.
+The extension has no interface of its own. It is a data pipe: the app is where you set
+everything up and watch the results arrive.
 
-## ✨ Features
+## Why an extension at all
 
-- 🚀 **Fast & Reliable** - Uses Instagram's official GraphQL API
-- 📊 **Complete Data** - Fetches ALL comments including nested replies
-- ⚡ **Progress Tracking** - Real-time progress bar with countdown timer
-- ⚙️ **Customizable Rate Limiting** - Adjust delay between requests (5-30 seconds)
-- 📥 **CSV Export** - One-click download with proper formatting
-- 🔒 **Privacy First** - All processing happens locally in your browser
+A web page can't do this. Instagram sends no `Access-Control-Allow-Origin` for
+`luckypick.win`, so the browser makes the request and then refuses to let the page read the
+response; and Safari and Firefox won't attach the session cookie to a cross-site request in
+the first place. An extension's `host_permissions` is the mechanism that exempts from both.
 
-## 📦 Installation
+Doing it server-side would mean handing a server your `sessionid` — a full account-takeover
+token — and then replaying your residential session from a datacenter IP, which is the
+loudest bot signature there is. So the fetching happens here, in your browser, on your
+connection, and nothing is transmitted anywhere.
 
-### Local Installation (Until Chrome Web Store Listing is Live)
+## Install
 
-1. **Download the extension files**
-   - Clone this repository: `git clone https://github.com/kdwilich/giveaway-app-extension.git`
-   - Or download the ZIP and extract it
+1. `git clone https://github.com/kdwilich/giveaway-winner-extension`
+2. Open `chrome://extensions`, turn on **Developer mode**
+3. **Load unpacked**, select the folder
+4. Copy the extension ID that appears
 
-2. **Open Chrome Extensions page**
-   - Navigate to `chrome://extensions/`
-   - Or click the three dots menu → More Tools → Extensions
+Unpacked builds get a random ID, so for local development tell the app which one to talk to:
 
-3. **Enable Developer Mode**
-   - Toggle the switch in the top-right corner
+```js
+localStorage.setItem('collectorExtensionId', 'PASTE_THE_ID_HERE')
+```
 
-4. **Load the extension**
-   - Click "Load unpacked"
-   - Navigate to and select the repository folder (or the extracted folder)
+In production the ID goes in `NEXT_PUBLIC_EXTENSION_ID` on the app.
 
-5. **Verify installation**
-   - The "Instagram Comment Collector" icon should appear in your Chrome toolbar
-   - If you don't see it, click the puzzle icon and pin it
+> `externally_connectable` requires a real second-level domain, so `localhost` will not
+> work. For local app development, add `127.0.0.1 dev.luckypick.win` to `/etc/hosts`, add
+> `"http://dev.luckypick.win/*"` to the `externally_connectable.matches` array, and serve
+> the app there.
 
-## 🎯 How to Use
+## Use
 
-1. **Navigate to any Instagram post** (e.g., `https://www.instagram.com/p/ABC123xyz/`)
-2. **Make sure you're logged into Instagram**
-3. **Click the extension icon** in your Chrome toolbar
-4. **Adjust settings** (optional):
-   - ✅ Exclude post owner's comments
-   - ⏱️ Set delay between requests (1-20 seconds, default: 10s)
-5. **Click "Collect Comments"**
-6. **Keep the side panel open** while collecting — progress and time remaining are shown live
-7. **Click "Download CSV File"** when collection is complete
+1. Open the post or video in a tab and make sure you're logged in
+2. Open [luckypick.win](https://luckypick.win/)
+3. Paste the post URL and hit **Collect**
 
-## ⚙️ Settings
+Progress shows in three places, so you don't have to babysit any of them:
 
-### Rate Limiting
-- **Default:** 10 seconds between requests
-- **Range:** 1-20 seconds
-- **Recommendation:** Keep at 10s to avoid Instagram rate limiting
-- Lower values = faster but riskier
+| Where | What it shows |
+|---|---|
+| The app tab | Live counts, retries, and entries streaming in as they arrive |
+| The toolbar badge | Percent complete, visible from any tab |
+| A notification | Fires when the run finishes or stops |
 
-### Exclude Post Owner
-- Automatically filters out comments from the post creator
-- Useful for giveaways where the host shouldn't win
+Close the app tab and collection keeps going. Reopen it and it reconnects mid-run. If the
+worker is torn down, a watchdog alarm resumes it from the last checkpoint.
 
-## 📋 CSV Format
+If you close the **post** tab, the run pauses and says so — reopen it and hit resume.
 
-| Column | Description |
-|--------|-------------|
-| `username` | Instagram username of commenter |
-| `comment_text` | Full text of the comment |
-| `timestamp` | ISO 8601 timestamp |
-| `is_reply` | Boolean indicating if it's a nested reply |
+## What it collects
 
-## 🔧 Technical Details
+Instagram inlines only the first few replies per thread, and YouTube doesn't include replies
+at all unless you ask. Both are expanded here, because on a tag-a-friend giveaway the replies
+*are* the entries.
 
-- **API:** Instagram GraphQL API (`query_hash: bc3296d1ce80a24b1b6e40b1e72903f5`)
-- **Batch Size:** 50 comments per request
-- **Authentication:** Uses your Instagram session cookies
+CSV columns: `comment_id`, `username`, `user_id`, `comment_text`, `timestamp`,
+`profile_pic_url`, `is_reply`, `parent_id`.
 
-## 🚨 Troubleshooting
+## Completeness
 
-### "Error: Could not extract post shortcode from URL"
-- Make sure you're on an Instagram post page (`/p/SHORTCODE`)
+Every run ends with a receipt: collected vs. the platform's own reported total, top-level vs.
+replies, unique people, requests made, how many were retried, and how long it took.
 
-### "Instagram API returned 401"
-- You're not logged into Instagram
-- Refresh the page and log in
+When the numbers disagree the app says so rather than rounding down. A gap is usually deleted
+accounts, private or blocked users, or spam-filtered comments — all counted in the post total
+but not readable back. If a reply thread couldn't be expanded, that's reported too.
 
-### Extension icon is greyed out
-- Only works on `instagram.com/p/*` pages
-- Refresh the page
+## Pacing
 
-## 📄 Privacy
+Requests start about 2.5 seconds apart with jitter, back off exponentially on a 429, and
+drift back toward the base rate once things are clean. A fixed interval is a cleaner machine
+signature than a varied one, so there's deliberately no "delay" slider any more.
 
-- ✅ No data collection
-- ✅ All processing is local
-- ✅ No external servers
+Re-running a post you've already collected resumes from the stored cursor, so topping up at
+the end of a giveaway only fetches what's new.
 
-## 🔗 Related
+## Layout
 
-- [Giveaway Picker](https://luckypick.win/)
-- [GitHub Repo](https://github.com/kdwilich/giveaway-winner)
+```
+manifest.json      permissions, externally_connectable, content script
+background.js      the engine: lifecycle, ports, badge, notifications, watchdog
+content.js         the in-page progress pill (closed shadow root, read-only overlay)
+lib/store.js       chrome.storage state — the single source of truth
+lib/pace.js        jitter, adaptive backoff, retry
+lib/instagram.js   GraphQL pagination + reply thread expansion
+lib/youtube.js     InnerTube pagination + reply continuations
+lib/csv.js         RFC 4180 export
+```
+
+## Known risk
+
+Instagram's comment endpoint is undocumented and moves. If the query hash goes stale the run
+fails loudly with "the query hash is probably stale" rather than quietly reporting zero
+comments — but it will still need a new hash. Current guidance is that Instagram is migrating
+to `POST /graphql/query` with a `doc_id`; that fallback isn't implemented yet.
+
+## Privacy
+
+No data collection, no external servers, no analytics. Comments are held in
+`chrome.storage.local` on your machine and sent only to the luckypick.win tab you have open.
