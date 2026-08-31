@@ -85,6 +85,35 @@ export function parseTarget(url) {
   return null;
 }
 
+/**
+ * Which post the app should offer to collect.
+ *
+ * Prefers the post the user clicked the icon from, then any open post tab, most
+ * recently looked at first. Returns null when nothing relevant is open, which the
+ * app renders as an empty box rather than a wrong guess.
+ */
+async function detectPost() {
+  const { pendingPost } = await chrome.storage.local.get('pendingPost');
+  if (pendingPost && Date.now() - pendingPost.at < 5 * 60 * 1000) {
+    const stillOpen = await chrome.tabs.get(pendingPost.tabId).catch(() => null);
+    if (stillOpen) return { url: pendingPost.url, ...parseTarget(pendingPost.url) };
+  }
+
+  const tabs = (await Promise.all([
+    chrome.tabs.query({ url: '*://www.instagram.com/p/*' }),
+    chrome.tabs.query({ url: '*://www.instagram.com/reel/*' }),
+    chrome.tabs.query({ url: '*://www.youtube.com/watch*' }),
+    chrome.tabs.query({ url: '*://www.youtube.com/shorts/*' })
+  ])).flat();
+
+  if (!tabs.length) return null;
+  tabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+
+  const url = tabs[0].url.split('?')[0];
+  const target = parseTarget(tabs[0].url);
+  return target ? { url: target.platform === 'youtube' ? tabs[0].url : url, ...target } : null;
+}
+
 async function findTab({ platform, postId }) {
   const patterns = platform === 'youtube'
     ? ['*://www.youtube.com/watch*', '*://www.youtube.com/shorts/*']
@@ -122,6 +151,7 @@ async function startRun({ postUrl, options = {} }) {
   const run = newRun({ ...target, postUrl, tabId: tab.id, delayMs: settings.baseDelayMs });
   await chrome.storage.local.set({ run });
 
+  await chrome.storage.local.remove('pendingPost');
   await chrome.alarms.create(WATCHDOG, { periodInMinutes: 0.5 });
   drive(run).catch(() => { /* drive reports its own failures */ });
   return run;
@@ -295,9 +325,12 @@ async function handle(message) {
         type: 'state',
         run: await getRun(),
         settings: await getSettings(),
-        history: await getHistory()
+        history: await getHistory(),
+        post: await detectPost()
       };
     }
+    case 'detect':
+      return { type: 'detected', post: await detectPost() };
     case 'start': {
       const run = await startRun(message);
       return { type: 'state', run };
@@ -374,11 +407,22 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 
 // ── Lifecycle ─────────────────────────────────────────────────
 
-chrome.action.onClicked.addListener(async () => {
+chrome.action.onClicked.addListener(async tab => {
+  // Clicking the icon from a post is the common path, so carry that post over
+  // rather than making the user paste the URL they were just looking at.
+  const target = tab?.url ? parseTarget(tab.url) : null;
+  if (target) {
+    await chrome.storage.local.set({
+      pendingPost: { url: tab.url.split('?')[0], tabId: tab.id, at: Date.now() }
+    });
+  }
+
   const [existing] = await chrome.tabs.query({ url: 'https://luckypick.win/*' });
   if (existing) {
     await chrome.tabs.update(existing.id, { active: true });
     await chrome.windows.update(existing.windowId, { focused: true });
+    // An already-open tab won't reload, so push the post over the port it holds.
+    if (target) broadcast({ type: 'detected', post: await detectPost() });
   } else {
     await chrome.tabs.create({ url: 'https://luckypick.win/' });
   }

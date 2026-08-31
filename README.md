@@ -41,8 +41,12 @@ In production the ID goes in `NEXT_PUBLIC_EXTENSION_ID` on the app.
 ## Use
 
 1. Open the post or video in a tab and make sure you're logged in
-2. Open [luckypick.win](https://luckypick.win/)
-3. Paste the post URL and hit **Collect**
+2. Click the extension icon — it opens [luckypick.win](https://luckypick.win/) with that
+   post already filled in
+3. Hit **Collect**
+
+The URL box fills itself from whichever post you have open, so you shouldn't have to paste
+anything. If it's empty, use "Check again" — that usually means no post tab is open.
 
 Progress shows in three places, so you don't have to babysit any of them:
 
