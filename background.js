@@ -213,12 +213,24 @@ async function drive(run) {
       const flush = shouldFlush(batchNumber) || step.done;
       if (flush) await saveComments(comments);
 
+      // Estimate from the rate actually observed, not from the configured delay --
+      // it absorbs latency, retries and reply expansion for free, and stays honest
+      // when Instagram slows us down mid-run.
+      const elapsed = Date.now() - run.startedAt;
+      const total = Math.max(step.total || 0, comments.length);
+      const remaining = Math.max(0, total - comments.length);
+      const etaMs = comments.length > 0 && remaining > 0
+        ? Math.round((elapsed / comments.length) * remaining)
+        : 0;
+
       await patchRun({
         cursor: step.cursor,
+        etaMs,
+        nextRequestAt: step.nextWaitMs ? Date.now() + step.nextWaitMs : null,
         // Only advance the resume point once the comments behind it are on disk.
         safeCursor: flush ? step.cursor : run.safeCursor,
         collected: comments.length,
-        total: Math.max(step.total || 0, comments.length),
+        total,
         requests: step.requests,
         retries: step.retries,
         repliesExpanded: step.repliesExpanded,
@@ -237,7 +249,7 @@ async function drive(run) {
   } catch (err) {
     if (err instanceof AbortError) {
       await saveComments(comments);
-      await patchRun({ status: 'paused', collected: comments.length });
+      await patchRun({ status: 'paused', collected: comments.length, nextRequestAt: null, etaMs: 0 });
       await pushState();
     } else {
       await saveComments(comments);
@@ -245,7 +257,9 @@ async function drive(run) {
       await patchRun({
         status: blocked ? 'blocked' : 'error',
         error: err.message,
-        collected: comments.length
+        collected: comments.length,
+        nextRequestAt: null,
+        etaMs: 0
       });
       await pushState();
       // Never let a partial list pass as complete — that is the exact bug this
@@ -264,7 +278,7 @@ async function finish(comments) {
   const run = await getRun();
   const receipt = buildReceipt(run, comments);
 
-  await patchRun({ status: 'done', collected: comments.length, receipt });
+  await patchRun({ status: 'done', collected: comments.length, receipt, nextRequestAt: null, etaMs: 0 });
   const final = await getRun();
 
   await addHistory({
