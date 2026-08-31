@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Comment Collector",
   "version": "3.0.0",
-  "description": "Collect every comment on an Instagram or YouTube post — including replies — for giveaway entries.",
+  "description": "Collect every comment on an Instagram or YouTube post \u2014 including replies \u2014 for giveaway entries.",
   "permissions": [
     "scripting",
     "storage",
@@ -40,8 +40,20 @@
         "https://www.youtube.com/watch*",
         "https://www.youtube.com/shorts/*"
       ],
-      "js": ["content.js"],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://luckypick.win/*",
+        "https://*.luckypick.win/*"
+      ],
+      "js": [
+        "announce.js"
+      ],
+      "run_at": "document_start"
     }
   ],
   "icons": {
