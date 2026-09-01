@@ -15,6 +15,9 @@ import {
   mergeComments, shouldFlush, getSettings, setSettings, addHistory, getHistory
 } from './lib/store.js';
 import { Pacer, AbortError, FatalError } from './lib/pace.js';
+import {
+  parseTarget, canonicalUrl, platformInfo, tabPatterns, supportedNames
+} from './lib/platform.js';
 import { collectInstagram } from './lib/instagram.js';
 import { collectYouTube } from './lib/youtube.js';
 import { toCSV, filename, download } from './lib/csv.js';
@@ -29,14 +32,20 @@ const ports = new Set();
 
 // ── Broadcast ─────────────────────────────────────────────────
 
-function broadcast(message) {
-  for (const port of ports) {
-    try {
-      port.postMessage(message);
-    } catch {
-      ports.delete(port);
-    }
+// A port can close under us between one line and the next: the worker cycling, the
+// tab closing, or -- since Chrome 123 -- the page being moved into the back/forward
+// cache, which closes the channel from the page's side. Every send has to tolerate
+// finding the other end already gone.
+function post(port, message) {
+  try {
+    port.postMessage(message);
+  } catch {
+    ports.delete(port);
   }
+}
+
+function broadcast(message) {
+  for (const port of ports) post(port, message);
 }
 
 async function pushState(extra = {}) {
@@ -77,14 +86,6 @@ function notify(title, message) {
 
 // ── Target parsing & tab discovery ────────────────────────────
 
-export function parseTarget(url) {
-  const ig = url.match(/instagram\.com\/(?:p|reel)\/([\w-]+)/);
-  if (ig) return { platform: 'instagram', postId: ig[1] };
-  const yt = url.match(/(?:youtube\.com\/watch\?(?:.*&)?v=|youtu\.be\/|youtube\.com\/shorts\/)([\w-]+)/);
-  if (yt) return { platform: 'youtube', postId: yt[1] };
-  return null;
-}
-
 /**
  * Which post the app should offer to collect.
  *
@@ -99,28 +100,20 @@ async function detectPost() {
     if (stillOpen) return { url: pendingPost.url, ...parseTarget(pendingPost.url) };
   }
 
-  const tabs = (await Promise.all([
-    chrome.tabs.query({ url: '*://www.instagram.com/p/*' }),
-    chrome.tabs.query({ url: '*://www.instagram.com/reel/*' }),
-    chrome.tabs.query({ url: '*://www.youtube.com/watch*' }),
-    chrome.tabs.query({ url: '*://www.youtube.com/shorts/*' })
-  ])).flat();
+  const tabs = (await Promise.all(
+    tabPatterns().map(pattern => chrome.tabs.query({ url: pattern }))
+  )).flat();
 
   if (!tabs.length) return null;
   tabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
 
-  const url = tabs[0].url.split('?')[0];
   const target = parseTarget(tabs[0].url);
-  return target ? { url: target.platform === 'youtube' ? tabs[0].url : url, ...target } : null;
+  return target ? { url: canonicalUrl(target), ...target } : null;
 }
 
 async function findTab({ platform, postId }) {
-  const patterns = platform === 'youtube'
-    ? ['*://www.youtube.com/watch*', '*://www.youtube.com/shorts/*']
-    : ['*://www.instagram.com/p/*', '*://www.instagram.com/reel/*'];
-
   const tabs = (await Promise.all(
-    patterns.map(pattern => chrome.tabs.query({ url: pattern }))
+    tabPatterns(platform).map(pattern => chrome.tabs.query({ url: pattern }))
   )).flat();
 
   // Prefer the tab actually showing this post; fall back to any tab on the platform,
@@ -135,20 +128,21 @@ async function startRun({ postUrl, options = {} }) {
   if (active) throw new Error('A collection is already running');
 
   const target = parseTarget(postUrl || '');
-  if (!target) throw new Error('Not an Instagram post or YouTube video URL');
+  if (!target) throw new Error(`That is not a ${supportedNames()} link we can collect from`);
 
+  const site = platformInfo(target.platform);
   const tab = await findTab(target);
   if (!tab) {
-    throw new Error(
-      target.platform === 'youtube'
-        ? 'Open the YouTube video in a tab first, then start collecting.'
-        : 'Open the Instagram post in a tab first, then start collecting.'
-    );
+    throw new Error(`Open the ${site.name} ${site.post} in a tab first, then start collecting.`);
   }
 
   const settings = await setSettings(options);
   await chrome.storage.local.remove('comments');
-  const run = newRun({ ...target, postUrl, tabId: tab.id, delayMs: settings.baseDelayMs });
+  // Store the rebuilt URL, not whatever was pasted: the run, its receipt, the
+  // history row and the app's input box should all name the post the same way.
+  const run = newRun({
+    ...target, postUrl: canonicalUrl(target), tabId: tab.id, delayMs: settings.baseDelayMs
+  });
   await chrome.storage.local.set({ run });
 
   await chrome.storage.local.remove('pendingPost');
@@ -192,6 +186,7 @@ async function drive(run) {
   const pacer = new Pacer(run.delayMs || settings.baseDelayMs);
   let comments = await getComments();
   let batchNumber = 0;
+  let exhausted = null;
 
   const source = run.platform === 'youtube'
     ? collectYouTube({
@@ -206,6 +201,7 @@ async function drive(run) {
   try {
     for await (const step of source) {
       batchNumber++;
+      if (step.exhausted) exhausted = step.exhausted;
       const before = comments.length;
       comments = mergeComments(comments, step.batch);
       const added = comments.slice(before);
@@ -215,7 +211,7 @@ async function drive(run) {
 
       // Estimate from the rate actually observed, not from the configured delay --
       // it absorbs latency, retries and reply expansion for free, and stays honest
-      // when Instagram slows us down mid-run.
+      // when the platform slows us down mid-run.
       const elapsed = Date.now() - run.startedAt;
       const total = Math.max(step.total || 0, comments.length);
       const remaining = Math.max(0, total - comments.length);
@@ -236,7 +232,12 @@ async function drive(run) {
         repliesExpanded: step.repliesExpanded,
         repliesFailed: step.repliesFailed,
         postOwner: step.postOwner || null,
-        delayMs: pacer.current
+        delayMs: pacer.current,
+        // Non-zero while we are waiting out an empty-page throttle, so the app can
+        // say the platform is holding us off instead of showing a stalled counter.
+        throttled: step.throttled || 0,
+        // Non-zero while walking a stretch the platform has nothing to serve from.
+        skippingEmpty: step.skippingEmpty || 0
       });
 
       const current = await pushState();
@@ -245,7 +246,7 @@ async function drive(run) {
     }
 
     await saveComments(comments);
-    await finish(comments);
+    await finish(comments, exhausted);
   } catch (err) {
     if (err instanceof AbortError) {
       await saveComments(comments);
@@ -274,11 +275,14 @@ async function drive(run) {
   }
 }
 
-async function finish(comments) {
+async function finish(comments, exhausted = null) {
   const run = await getRun();
-  const receipt = buildReceipt(run, comments);
+  const receipt = buildReceipt(run, comments, exhausted);
 
-  await patchRun({ status: 'done', collected: comments.length, receipt, nextRequestAt: null, etaMs: 0 });
+  await patchRun({
+    status: 'done', collected: comments.length, receipt,
+    nextRequestAt: null, etaMs: 0, throttled: 0, skippingEmpty: 0
+  });
   const final = await getRun();
 
   await addHistory({
@@ -296,17 +300,20 @@ async function finish(comments) {
   await pushState();
 
   const gap = receipt.reportedTotal - receipt.collected;
+  const site = platformInfo(run.platform);
   notify(
     'Collection complete',
-    gap > 0
-      ? `${receipt.collected.toLocaleString()} of ${receipt.reportedTotal.toLocaleString()} — see the app for what's missing.`
-      : `${receipt.collected.toLocaleString()} comments collected.`
+    exhausted
+      ? `${receipt.collected.toLocaleString()} collected — all ${site.name} would serve. ${gap.toLocaleString()} of its count are unreachable.`
+      : gap > 0
+        ? `${receipt.collected.toLocaleString()} of ${receipt.reportedTotal.toLocaleString()} — see the app for what's missing.`
+        : `${receipt.collected.toLocaleString()} comments collected.`
   );
 }
 
 // A run is only trustworthy if it can account for itself. This is what the app shows
 // instead of a bare number, and what makes "we got the whole list" checkable.
-function buildReceipt(run, comments) {
+function buildReceipt(run, comments, exhausted = null) {
   const users = new Set(comments.map(c => c.username));
   const replies = comments.filter(c => c.is_reply).length;
 
@@ -326,7 +333,11 @@ function buildReceipt(run, comments) {
     uniqueUsers: users.size,
     threadsExpanded: run.repliesExpanded || 0,
     threadsFailed: run.repliesFailed || 0,
-    postOwner: run.postOwner || null
+    postOwner: run.postOwner || null,
+    // null when the list ran out on its own terms. Otherwise the platform stopped
+    // serving before its own count was reached, and the gap is structural rather
+    // than something a re-run will recover.
+    exhausted
   };
 }
 
@@ -392,16 +403,22 @@ async function handle(message) {
 
 function wire(port) {
   ports.add(port);
-  port.onDisconnect.addListener(() => ports.delete(port));
+  port.onDisconnect.addListener(() => {
+    // Reading lastError is what keeps Chrome from logging "Unchecked
+    // runtime.lastError". A page entering the back/forward cache always disconnects
+    // with one set, and that is routine here, not a fault worth surfacing.
+    void chrome.runtime.lastError;
+    ports.delete(port);
+  });
   port.onMessage.addListener(async message => {
     try {
       const reply = await handle(message);
-      port.postMessage({ ...reply, replyTo: message.id });
+      post(port, { ...reply, replyTo: message.id });
     } catch (err) {
-      port.postMessage({ type: 'error', message: err.message, replyTo: message.id });
+      post(port, { type: 'error', message: err.message, replyTo: message.id });
     }
   });
-  getRun().then(run => port.postMessage({ type: 'state', run }));
+  getRun().then(run => post(port, { type: 'state', run }));
 }
 
 // The in-page pill connects here. A content-script port is also the sturdier of the
@@ -427,7 +444,7 @@ chrome.action.onClicked.addListener(async tab => {
   const target = tab?.url ? parseTarget(tab.url) : null;
   if (target) {
     await chrome.storage.local.set({
-      pendingPost: { url: tab.url.split('?')[0], tabId: tab.id, at: Date.now() }
+      pendingPost: { url: canonicalUrl(target), tabId: tab.id, at: Date.now() }
     });
   }
 

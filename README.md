@@ -1,7 +1,10 @@
-# Comment Collector
+# Lucky Pick — Giveaway Comment Collector
 
 Collects every comment on an Instagram post or YouTube video — **including replies** — and
 streams them straight into [Lucky Pick](https://luckypick.win/) for the draw.
+
+Published on the
+[Chrome Web Store](https://chromewebstore.google.com/detail/lucky-pick-giveaway-comme/mdbbnaihbbejghdacehmepeanmmfennb).
 
 The extension has no interface of its own. It is a data pipe: the app is where you set
 everything up and watch the results arrive.
@@ -20,18 +23,23 @@ connection, and nothing is transmitted anywhere.
 
 ## Install
 
-1. `git clone https://github.com/kdwilich/giveaway-winner-extension`
+[Add it from the Chrome Web Store](https://chromewebstore.google.com/detail/lucky-pick-giveaway-comme/mdbbnaihbbejghdacehmepeanmmfennb)
+— that's the whole install. Extension ID: `mdbbnaihbbejghdacehmepeanmmfennb`.
+
+## Develop
+
+1. `git clone https://github.com/kdwilich/lucky-pick-extension`
 2. Open `chrome://extensions`, turn on **Developer mode**
 3. **Load unpacked**, select the folder
 4. Copy the extension ID that appears
 
-Unpacked builds get a random ID, so for local development tell the app which one to talk to:
+Unpacked builds get a random ID, so tell the app which one to talk to:
 
 ```js
 localStorage.setItem('collectorExtensionId', 'PASTE_THE_ID_HERE')
 ```
 
-In production the ID goes in `NEXT_PUBLIC_EXTENSION_ID` on the app.
+The app otherwise defaults to the published ID, and `NEXT_PUBLIC_EXTENSION_ID` overrides it.
 
 > `externally_connectable` requires a real second-level domain, so `localhost` will not
 > work. For local app development, add `127.0.0.1 dev.luckypick.win` to `/etc/hosts`, add

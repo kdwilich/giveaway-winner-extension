@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Comment Collector",
+  "name": "Lucky Pick - Giveaway Comment Collector",
+  "short_name": "Lucky Pick",
   "version": "3.0.0",
-  "description": "Collect every comment on an Instagram or YouTube post \u2014 including replies \u2014 for giveaway entries.",
+  "description": "Collect every comment on an Instagram or YouTube post and stream them into Lucky Pick to draw a giveaway winner.",
   "permissions": [
     "scripting",
     "storage",

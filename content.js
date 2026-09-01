@@ -116,25 +116,50 @@
   }
 
   // Reconnects on its own if the worker cycles, which also re-arms the keepalive.
+  let port = null;
+  let retry = null;
+
   function connect() {
-    let port;
+    clearTimeout(retry);
+    retry = null;
+    if (port) return;
+
+    let opened;
     try {
-      port = chrome.runtime.connect({ name: 'pill' });
+      opened = chrome.runtime.connect({ name: 'pill' });
     } catch {
       return; // Extension reloading or disabled.
     }
+    port = opened;
 
-    port.onMessage.addListener(message => {
+    opened.onMessage.addListener(message => {
       if (message.type === 'state' || message.type === 'done') render(message.run);
     });
 
-    port.onDisconnect.addListener(() => {
+    opened.onDisconnect.addListener(() => {
       void chrome.runtime.lastError;
-      setTimeout(connect, 2000);
+      if (port === opened) port = null;
+      retry = setTimeout(connect, 2000);
     });
 
-    port.postMessage({ type: 'hello' });
+    try {
+      opened.postMessage({ type: 'hello' });
+    } catch {
+      // Closed on arrival; the disconnect listener above schedules the retry.
+    }
   }
+
+  // Since Chrome 123, a page moved into the back/forward cache has its extension
+  // channel closed — and it is the service worker, not this frozen page, that gets
+  // told. So there is no onDisconnect here to retry from: on the way back in, the
+  // port we are still holding is already dead, and the reconnect has to be explicit
+  // or the pill goes quiet and the worker loses its sturdiest keepalive anchor.
+  // https://developer.chrome.com/blog/bfcache-extension-messaging-changes
+  window.addEventListener('pageshow', event => {
+    if (!event.persisted) return;
+    port = null;
+    connect();
+  });
 
   connect();
 })();
